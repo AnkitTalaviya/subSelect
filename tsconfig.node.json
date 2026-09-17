@@ -1,0 +1,16 @@
+{
+  "//": "Build tooling runs in Node. Kept separate so Node globals never leak into the extension's own type environment.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["vitest.config.ts"]
+}

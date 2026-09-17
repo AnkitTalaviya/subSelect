@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test pages</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0f16;
+        color: #e8eaf2;
+        font: 15px/1.65 system-ui, "Segoe UI", Roboto, sans-serif;
+        padding: 40px 24px;
+      }
+      main {
+        max-width: 62ch;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+      p {
+        color: #b3b9c9;
+      }
+      ul {
+        padding-left: 18px;
+      }
+      a {
+        color: #8fa6ff;
+      }
+      code {
+        background: #1c1f2b;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.9em;
+      }
+      .note {
+        border-left: 2px solid #2b2f3f;
+        padding-left: 12px;
+        color: #9aa1b5;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>SubSelect test pages</h1>
+      <p>
+        Two synthetic players, one per subtitle source, so Phase 1 can be verified without
+        depending on any third-party site.
+      </p>
+      <ul>
+        <li><a href="./dom-captions.html">Player-rendered DOM captions</a> — GenericDomAdapter</li>
+        <li><a href="./texttrack.html">Browser-rendered TextTrack cues</a> — TextTrackAdapter</li>
+      </ul>
+
+      <p class="note">
+        Opened over <code>file://</code>, these pages need <em>Allow access to file URLs</em>
+        enabled for SubSelect on <code>chrome://extensions</code>. Otherwise serve the folder
+        over HTTP and use <strong>Enable on this site</strong> in the SubSelect popup.
+      </p>
+      <p class="note">
+        Run <code>localStorage.SUBSELECT_DEBUG = '1'</code> in the console and reload to see
+        the engine's detection decisions.
+      </p>
+    </main>
+  </body>
+</html>

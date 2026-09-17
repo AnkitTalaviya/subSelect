@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect settings</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <h1>SubSelect</h1>
+          <p class="tagline">Interactive subtitles for online video</p>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section aria-labelledby="h-general">
+        <h2 id="h-general">General</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="enabled">Interactive subtitles</label>
+            <p class="hint">When off, SubSelect attaches nothing at all — no overlay, no listeners.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="enabled" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="debug">Diagnostic logging</label>
+            <p class="hint">Logs detection decisions to the page console. Useful when reporting a site that doesn't work.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="debug" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-language">
+        <h2 id="h-language">Language</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="subtitleLanguage">Subtitle language</label>
+            <p class="hint">
+              Used to split words correctly and to pick a pronunciation voice. A site that
+              declares its own caption language overrides this.
+            </p>
+          </div>
+          <select id="subtitleLanguage"></select>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="translationLanguage">Translate into</label>
+          </div>
+          <select id="translationLanguage"></select>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-providers">
+        <h2 id="h-providers">Providers</h2>
+        <p class="note lead">
+          SubSelect contacts nothing until you set a provider up here. Providers marked
+          <em>online</em> receive the text you select; you have to approve each one by name
+          before a single request is made.
+        </p>
+
+        <div class="field">
+          <div class="field-text">
+            <label for="translationProvider">Translation</label>
+            <p class="hint" id="translation-status"></p>
+          </div>
+          <select id="translationProvider">
+            <option value="none">Not set up</option>
+            <option value="chrome-ondevice">On-device (Chrome built-in)</option>
+            <option value="libretranslate">LibreTranslate (online)</option>
+            <option value="deepl">DeepL (online)</option>
+            <option value="custom">Custom endpoint (online)</option>
+          </select>
+        </div>
+        <div class="field" id="translation-endpoint-field" hidden>
+          <div class="field-text">
+            <label for="translationEndpoint">Endpoint URL</label>
+            <p class="hint" id="translation-endpoint-hint"></p>
+          </div>
+          <input type="url" id="translationEndpoint" placeholder="https://…" spellcheck="false" />
+        </div>
+        <div class="field" id="translation-key-field" hidden>
+          <div class="field-text">
+            <label for="translationApiKey">API key</label>
+            <p class="hint">Stored on this device only, and sent only to the endpoint above.</p>
+          </div>
+          <input type="password" id="translationApiKey" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field" id="translation-approve-field" hidden>
+          <div class="field-text">
+            <label id="translation-approve-label">Approval</label>
+            <p class="hint" id="translation-approve-hint"></p>
+          </div>
+          <button type="button" class="ghost" id="translation-approve">Approve</button>
+        </div>
+
+        <div class="field spaced">
+          <div class="field-text">
+            <label for="dictionaryProvider">Dictionary</label>
+            <p class="hint" id="dictionary-status"></p>
+          </div>
+          <select id="dictionaryProvider">
+            <option value="none">Not set up</option>
+            <option value="wiktionary">Wiktionary (online, no key)</option>
+            <option value="custom">Custom endpoint (online)</option>
+          </select>
+        </div>
+        <div class="field" id="dictionary-endpoint-field" hidden>
+          <div class="field-text">
+            <label for="dictionaryEndpoint">Endpoint URL</label>
+            <p class="hint">Called as <code>?word=…&amp;language=…</code>, expects <code>{ "senses": [ … ] }</code>.</p>
+          </div>
+          <input type="url" id="dictionaryEndpoint" placeholder="https://…" spellcheck="false" />
+        </div>
+        <div class="field" id="dictionary-approve-field" hidden>
+          <div class="field-text">
+            <label id="dictionary-approve-label">Approval</label>
+            <p class="hint" id="dictionary-approve-hint"></p>
+          </div>
+          <button type="button" class="ghost" id="dictionary-approve">Approve</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-vocabulary">
+        <h2 id="h-vocabulary">Vocabulary</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="saveContext">Save the sentence with each word</label>
+            <p class="hint">The subtitle a word appeared in, which is what makes a saved word worth reviewing.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="saveContext" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label>Saved words</label>
+            <p class="hint" id="vocabulary-count">—</p>
+          </div>
+          <div class="shortcut-row">
+            <button type="button" class="ghost" id="open-vocabulary">Open list</button>
+            <button type="button" class="ghost danger" id="clear-vocabulary">Delete all</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-interaction">
+        <h2 id="h-interaction">Interaction</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="clickToSelect">Click to select a word</label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="clickToSelect" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="dragToSelect">Drag to select a phrase</label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="dragToSelect" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="doubleClickToSelect">Double-click to select the whole caption</label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="doubleClickToSelect" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="shortcut">Keyboard shortcut</label>
+            <p class="hint">
+              Turns interactive subtitles on and off. Change it on Chrome's shortcuts page.
+            </p>
+          </div>
+          <div class="shortcut-row">
+            <kbd id="shortcut">Alt+Shift+S</kbd>
+            <button type="button" class="ghost" id="edit-shortcuts">Change</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-menu">
+        <h2 id="h-menu">Context menu</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="showContextMenu">Show the menu when I select something</label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="showContextMenu" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="contextMenuPlacement">Menu position</label>
+            <p class="hint">Automatic keeps it off the picture and inside the player.</p>
+          </div>
+          <select id="contextMenuPlacement">
+            <option value="auto">Automatic</option>
+            <option value="above">Above the subtitle</option>
+            <option value="below">Below the subtitle</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="speechEnabled">Offer Pronounce</label>
+            <p class="hint" id="speech-hint">Uses your browser's built-in speech synthesis.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="speechEnabled" />
+            <span class="track" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-appearance">
+        <h2 id="h-appearance">Appearance</h2>
+        <div class="field">
+          <div class="field-text">
+            <label for="theme">Theme</label>
+            <p class="hint">Applies to SubSelect's own surfaces, not to the site.</p>
+          </div>
+          <select id="theme">
+            <option value="system">Match system</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="field-text">
+            <label for="highlightColor">Highlight colour</label>
+            <p class="hint">Shown behind selected words. Semi-transparent so the caption stays readable.</p>
+          </div>
+          <div class="colour-row">
+            <input type="color" id="highlightColor" />
+            <input type="range" id="highlightAlpha" min="20" max="90" step="5" aria-label="Highlight opacity" />
+          </div>
+        </div>
+        <div class="preview" id="preview" aria-hidden="true">
+          <span>Ich möchte </span><span class="preview-hit">morgen nach Berlin</span><span> fahren.</span>
+        </div>
+        <button type="button" class="ghost" id="reset-appearance">Reset appearance</button>
+      </section>
+
+      <section aria-labelledby="h-privacy">
+        <h2 id="h-privacy">Privacy</h2>
+        <dl class="privacy">
+          <dt>Stored on this device</dt>
+          <dd>These settings. Nothing else is written to disk. The word you currently have selected is held in memory only, so the toolbar popup can show it, and is discarded when the tab closes.</dd>
+
+          <dt>Sent off this device</dt>
+          <dd id="privacy-network">
+            Only what you ask for, to the provider you approved. With no provider set up,
+            SubSelect makes no network requests at all. When one is set up, the text you
+            selected — and the subtitle line around it — is sent to that provider when you
+            press Translate or Definition, and never at any other time.
+          </dd>
+
+          <dt>API keys</dt>
+          <dd>
+            Kept in this browser's local storage and sent only to the endpoint you entered
+            them for. They are never transmitted anywhere else and never leave with an export.
+          </dd>
+
+          <dt>Saved vocabulary</dt>
+          <dd>
+            Stays in this browser. It is never uploaded, and export files are generated on
+            this device.
+          </dd>
+
+          <dt>What SubSelect reads</dt>
+          <dd>Only subtitle text the player has already put on screen, or that the browser has already parsed from a caption track. It never touches DRM, encrypted streams or network traffic, and never downloads video or subtitle files.</dd>
+
+          <dt>Permissions</dt>
+          <dd>No site access is requested at install time. SubSelect runs automatically only on known video sites; anywhere else it stays dormant until you press <em>Enable on this site</em>.</dd>
+        </dl>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        <span id="saved-state" role="status" aria-live="polite"></span>
+      </p>
+    </footer>
+
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>

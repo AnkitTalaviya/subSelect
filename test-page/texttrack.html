@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test — TextTrack cues</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0f16;
+        color: #e8eaf2;
+        font: 14px/1.6 system-ui, "Segoe UI", Roboto, sans-serif;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      p.lede {
+        margin: 0 0 20px;
+        color: #9aa1b5;
+        max-width: 60ch;
+      }
+      .player {
+        position: relative;
+        width: min(960px, 100%);
+        aspect-ratio: 16 / 9;
+        background: #000;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+      .controls {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #1c1f2b;
+        color: #e8eaf2;
+        border: 1px solid #2b2f3f;
+        border-radius: 6px;
+        padding: 7px 11px;
+        font: inherit;
+        cursor: pointer;
+      }
+      code {
+        background: #1c1f2b;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      #mode {
+        color: #9aa1b5;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SubSelect test — browser-rendered TextTrack cues</h1>
+    <p class="lede">
+      Exercises <code>TextTrackAdapter</code>. Cues are added with
+      <code>addTextTrack</code> + <code>VTTCue</code> — no file, no CORS. The browser would
+      normally render these in a shadow tree no extension can reach, so SubSelect switches
+      the track to <code>hidden</code> and draws the caption itself. Click, drag and
+      <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>C</kbd> work here exactly as on the DOM-caption
+      page. Turning SubSelect off must hand the track straight back to
+      <code>showing</code>.
+    </p>
+
+    <div class="player" id="player">
+      <video id="video" playsinline></video>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play">Play</button>
+      <button type="button" id="fullscreen">Fullscreen</button>
+      <button type="button" id="captions">Captions off</button>
+      <button type="button" id="report">Report track mode</button>
+    </div>
+    <p id="mode"></p>
+
+    <script type="module">
+      import { LINES, startCanvasVideo } from './shared.js';
+
+      const video = document.getElementById('video');
+      const player = document.getElementById('player');
+      const modeLine = document.getElementById('mode');
+
+      startCanvasVideo(video);
+
+      const track = video.addTextTrack('subtitles', 'Deutsch', 'de');
+
+      // A MediaStream's currentTime advances from zero but cannot be seeked, so the cue
+      // schedule is laid out once, long enough to run for a few minutes.
+      const SECONDS = 3.5;
+      const CYCLES = 6;
+      for (let cycle = 0; cycle < CYCLES; cycle++) {
+        LINES.forEach((line, index) => {
+          const start = (cycle * LINES.length + index) * SECONDS;
+          track.addCue(new VTTCue(start, start + SECONDS, line));
+        });
+      }
+
+      // The page's own intent: captions on. SubSelect flips this to `hidden` while it
+      // renders, and must restore it on teardown.
+      track.mode = 'showing';
+
+      document.getElementById('play').addEventListener('click', () => void video.play());
+      document.getElementById('fullscreen').addEventListener('click', () => {
+        void (document.fullscreenElement ? document.exitFullscreen() : player.requestFullscreen());
+      });
+
+      const captionsButton = document.getElementById('captions');
+      captionsButton.addEventListener('click', () => {
+        const on = track.mode !== 'disabled';
+        track.mode = on ? 'disabled' : 'showing';
+        captionsButton.textContent = on ? 'Captions on' : 'Captions off';
+      });
+
+      document.getElementById('report').addEventListener('click', () => {
+        modeLine.textContent = `track.mode = "${track.mode}" · activeCues = ${track.activeCues?.length ?? 0} · currentTime = ${video.currentTime.toFixed(1)}`;
+      });
+    </script>
+  </body>
+</html>

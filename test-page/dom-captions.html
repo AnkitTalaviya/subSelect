@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test — DOM captions</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0f16;
+        color: #e8eaf2;
+        font: 14px/1.6 system-ui, "Segoe UI", Roboto, sans-serif;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      p.lede {
+        margin: 0 0 20px;
+        color: #9aa1b5;
+        max-width: 60ch;
+      }
+      /* A stand-in for a commercial player: video plus a sibling caption layer. */
+      .player {
+        position: relative;
+        width: min(960px, 100%);
+        aspect-ratio: 16 / 9;
+        background: #000;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .player video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+      .timedtext {
+        position: absolute;
+        left: 5%;
+        right: 5%;
+        bottom: 8%;
+        text-align: center;
+        pointer-events: none;
+      }
+      .timedtext-line {
+        display: block;
+      }
+      .timedtext-line > span {
+        display: inline-block;
+        padding: 0.1em 0.45em;
+        background: rgba(8, 8, 8, 0.75);
+        color: #fff;
+        font-size: clamp(16px, 3.2vw, 34px);
+        font-weight: 500;
+        line-height: 1.35;
+        border-radius: 2px;
+      }
+      .controls {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      button {
+        background: #1c1f2b;
+        color: #e8eaf2;
+        border: 1px solid #2b2f3f;
+        border-radius: 6px;
+        padding: 7px 11px;
+        font: inherit;
+        cursor: pointer;
+      }
+      code {
+        background: #1c1f2b;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      /* A decorative background loop and a tiny preview, so active-video scoring has
+         something wrong to reject. */
+      .decoy-tiny {
+        width: 120px;
+        height: 68px;
+        margin-top: 18px;
+        border-radius: 6px;
+        display: block;
+        background: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SubSelect test — player-rendered DOM captions</h1>
+    <p class="lede">
+      Exercises <code>GenericDomAdapter</code>: caption text lives in the page DOM, so the
+      overlay mirrors its geometry and typography. Click a word, drag across several
+      (in either direction, and across both lines of the two-line caption), or
+      double-click for the whole caption. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>C</kbd>
+      copies, <kbd>Esc</kbd> clears. The video must keep playing throughout. Try
+      fullscreen and 200% zoom too.
+    </p>
+
+    <div class="player" id="player">
+      <video id="video" playsinline></video>
+      <div class="timedtext" id="captions" role="region" aria-label="Untertitel" aria-live="polite"></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play">Play</button>
+      <button type="button" id="fullscreen">Fullscreen</button>
+      <button type="button" id="toggle">Turn captions off</button>
+    </div>
+
+    <video class="decoy-tiny" id="decoy" muted loop autoplay playsinline></video>
+
+    <script type="module">
+      import { cycleLines, startCanvasVideo } from './shared.js';
+
+      const video = document.getElementById('video');
+      const captions = document.getElementById('captions');
+      const player = document.getElementById('player');
+
+      startCanvasVideo(video);
+      startCanvasVideo(document.getElementById('decoy'), { width: 320, height: 180 });
+
+      /** Renders a caption the way a commercial player does: one block element per line. */
+      const renderCaption = (line) => {
+        captions.replaceChildren(
+          ...line.split('\n').map((text) => {
+            const outer = document.createElement('div');
+            outer.className = 'timedtext-line';
+            const inner = document.createElement('span');
+            inner.textContent = text;
+            outer.appendChild(inner);
+            return outer;
+          }),
+        );
+      };
+
+      let timer = cycleLines(renderCaption);
+
+      document.getElementById('play').addEventListener('click', () => void video.play());
+      document.getElementById('fullscreen').addEventListener('click', () => {
+        void (document.fullscreenElement ? document.exitFullscreen() : player.requestFullscreen());
+      });
+
+      const toggle = document.getElementById('toggle');
+      toggle.addEventListener('click', () => {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+          captions.replaceChildren();
+          toggle.textContent = 'Turn captions on';
+        } else {
+          timer = cycleLines(renderCaption);
+          toggle.textContent = 'Turn captions off';
+        }
+      });
+    </script>
+  </body>
+</html>

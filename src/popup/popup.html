@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="header">
+        <span class="mark" aria-hidden="true"></span>
+        <h1>SubSelect</h1>
+      </header>
+
+      <div class="row">
+        <label class="row-label" for="enabled">Interactive subtitles</label>
+        <label class="switch">
+          <input type="checkbox" id="enabled" />
+          <span class="track" aria-hidden="true"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="language">Subtitle language</label>
+        <select id="language"></select>
+      </div>
+
+      <section class="status" aria-live="polite">
+        <p class="status-line" id="status">Checking this page…</p>
+        <button type="button" class="ghost" id="grant" hidden>Enable on this site</button>
+      </section>
+
+      <section class="selection" id="selection-block" hidden>
+        <h2>Selected</h2>
+        <p class="selection-text" id="selection-text"></p>
+        <p class="selection-context" id="selection-context"></p>
+      </section>
+
+      <div class="row">
+        <span class="row-label">Saved words</span>
+        <span class="tally" id="vocab-count">—</span>
+      </div>
+
+      <footer class="footer">
+        <button type="button" class="ghost wide" id="open-vocabulary">Open vocabulary</button>
+        <button type="button" class="ghost wide" id="open-options">Settings</button>
+        <p>
+          Click a word, drag across several, or double-click for the whole caption.
+          <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>C</kbd> copies, <kbd>Esc</kbd> clears.
+        </p>
+      </footer>
+    </main>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>
