@@ -40,6 +40,12 @@
   box-sizing: border-box;
 }
 
+/* An author `display` rule outranks the UA sheet's `[hidden] { display: none }`, so the
+   provider fields kept showing while marked hidden. This settles it for every element. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);

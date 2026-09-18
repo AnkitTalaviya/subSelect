@@ -20,56 +20,62 @@
     <main>
       <section aria-labelledby="h-general">
         <h2 id="h-general">General</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="enabled">Interactive subtitles</label>
-            <p class="hint">When off, SubSelect attaches nothing at all — no overlay, no listeners.</p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="enabled">Interactive subtitles</label>
+              <p class="hint">When off, SubSelect attaches nothing at all — no overlay, no listeners.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enabled" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="enabled" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="debug">Diagnostic logging</label>
-            <p class="hint">Logs detection decisions to the page console. Useful when reporting a site that doesn't work.</p>
+          <div class="field">
+            <div class="field-text">
+              <label for="debug">Diagnostic logging</label>
+              <p class="hint">Logs detection decisions to the page console. Useful when reporting a site that doesn't work.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="debug" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="debug" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
         </div>
       </section>
 
       <section aria-labelledby="h-language">
         <h2 id="h-language">Language</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="subtitleLanguage">Subtitle language</label>
-            <p class="hint">
-              Used to split words correctly and to pick a pronunciation voice. A site that
-              declares its own caption language overrides this.
-            </p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="subtitleLanguage">Subtitle language</label>
+              <p class="hint">
+                Used to split words correctly and to pick a pronunciation voice. A site that
+                declares its own caption language overrides this.
+              </p>
+            </div>
+            <select id="subtitleLanguage"></select>
           </div>
-          <select id="subtitleLanguage"></select>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="translationLanguage">Translate into</label>
+          <div class="field">
+            <div class="field-text">
+              <label for="translationLanguage">Translate into</label>
+            </div>
+            <select id="translationLanguage"></select>
           </div>
-          <select id="translationLanguage"></select>
         </div>
       </section>
 
       <section aria-labelledby="h-providers">
         <h2 id="h-providers">Providers</h2>
-        <div class="field lookups">
-          <div class="field-text">
-            <label id="lookups-label">Online lookups</label>
-            <p class="hint" id="lookups-hint"></p>
+        <div class="card">
+          <div class="field lookups">
+            <div class="field-text">
+              <label id="lookups-label">Online lookups</label>
+              <p class="hint" id="lookups-hint"></p>
+            </div>
+            <button type="button" class="ghost" id="lookups-toggle">Turn on</button>
           </div>
-          <button type="button" class="ghost" id="lookups-toggle">Turn on</button>
         </div>
         <p class="note lead">
           <strong>Automatic</strong> tries the free keyless services in turn and uses
@@ -77,219 +83,233 @@
           Pick a single provider instead if you prefer one, or want to use your own key.
         </p>
 
-        <div class="field">
-          <div class="field-text">
-            <label for="translationProvider">Translation</label>
-            <p class="hint" id="translation-status"></p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="translationProvider">Translation</label>
+              <p class="hint" id="translation-status"></p>
+            </div>
+            <select id="translationProvider">
+              <option value="auto">Automatic — free services, with fallback</option>
+              <option value="none">Off</option>
+              <option value="chrome-ondevice">On-device (Chrome built-in)</option>
+              <option value="libretranslate">LibreTranslate — open source (online)</option>
+              <option value="lingva">Lingva Translate — open source (online)</option>
+              <option value="deepl">DeepL (online, key)</option>
+              <option value="custom">Custom endpoint (online)</option>
+            </select>
           </div>
-          <select id="translationProvider">
-            <option value="auto">Automatic — free services, with fallback</option>
-            <option value="none">Off</option>
-            <option value="chrome-ondevice">On-device (Chrome built-in)</option>
-            <option value="libretranslate">LibreTranslate — open source (online)</option>
-            <option value="lingva">Lingva Translate — open source (online)</option>
-            <option value="deepl">DeepL (online, key)</option>
-            <option value="custom">Custom endpoint (online)</option>
-          </select>
-        </div>
-        <div class="field" id="translation-endpoint-field" hidden>
-          <div class="field-text">
-            <label for="translationEndpoint">Endpoint URL</label>
-            <p class="hint" id="translation-endpoint-hint"></p>
-            <p class="hint instances" id="translation-instances"></p>
+          <div class="field" id="translation-endpoint-field" hidden>
+            <div class="field-text">
+              <label for="translationEndpoint">Endpoint URL</label>
+              <p class="hint" id="translation-endpoint-hint"></p>
+              <p class="hint instances" id="translation-instances"></p>
+            </div>
+            <input type="url" id="translationEndpoint" placeholder="https://…" spellcheck="false" />
           </div>
-          <input type="url" id="translationEndpoint" placeholder="https://…" spellcheck="false" />
-        </div>
-        <div class="field" id="translation-key-field" hidden>
-          <div class="field-text">
-            <label for="translationApiKey">API key</label>
-            <p class="hint">Stored on this device only, and sent only to the endpoint above.</p>
+          <div class="field" id="translation-key-field" hidden>
+            <div class="field-text">
+              <label for="translationApiKey">API key</label>
+              <p class="hint">Stored on this device only, and sent only to the endpoint above.</p>
+            </div>
+            <input type="password" id="translationApiKey" autocomplete="off" spellcheck="false" />
           </div>
-          <input type="password" id="translationApiKey" autocomplete="off" spellcheck="false" />
-        </div>
-
-        <div class="field spaced">
-          <div class="field-text">
-            <label for="dictionaryProvider">Dictionary</label>
-            <p class="hint" id="dictionary-status"></p>
-          </div>
-          <select id="dictionaryProvider">
-            <option value="auto">Automatic — free services, with fallback</option>
-            <option value="none">Off</option>
-            <option value="wiktionary">Wiktionary — open data (online, no key)</option>
-            <option value="free-dictionary">Free Dictionary API — open source (online, no key)</option>
-            <option value="custom">Custom endpoint (online)</option>
-          </select>
-        </div>
-        <div class="field" id="dictionary-endpoint-field" hidden>
-          <div class="field-text">
-            <label for="dictionaryEndpoint">Endpoint URL</label>
-            <p class="hint">Called as <code>?word=…&amp;language=…</code>, expects <code>{ "senses": [ … ] }</code>.</p>
-          </div>
-          <input type="url" id="dictionaryEndpoint" placeholder="https://…" spellcheck="false" />
         </div>
 
-        <div class="field spaced">
-          <div class="field-text">
-            <label for="pronunciationProvider">Pronunciation</label>
-            <p class="hint" id="pronunciation-status"></p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="dictionaryProvider">Dictionary</label>
+              <p class="hint" id="dictionary-status"></p>
+            </div>
+            <select id="dictionaryProvider">
+              <option value="auto">Automatic — free services, with fallback</option>
+              <option value="none">Off</option>
+              <option value="wiktionary">Wiktionary — open data (online, no key)</option>
+              <option value="free-dictionary">Free Dictionary API — open source (online, no key)</option>
+              <option value="custom">Custom endpoint (online)</option>
+            </select>
           </div>
-          <select id="pronunciationProvider">
-            <option value="browser">Speech synthesis (offline)</option>
-            <option value="wikimedia">Wikimedia recordings — human voices (online)</option>
-          </select>
+          <div class="field" id="dictionary-endpoint-field" hidden>
+            <div class="field-text">
+              <label for="dictionaryEndpoint">Endpoint URL</label>
+              <p class="hint">Called as <code>?word=…&amp;language=…</code>, expects <code>{ "senses": [ … ] }</code>.</p>
+            </div>
+            <input type="url" id="dictionaryEndpoint" placeholder="https://…" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="pronunciationProvider">Pronunciation</label>
+              <p class="hint" id="pronunciation-status"></p>
+            </div>
+            <select id="pronunciationProvider">
+              <option value="browser">Speech synthesis (offline)</option>
+              <option value="wikimedia">Wikimedia recordings — human voices (online)</option>
+            </select>
+          </div>
         </div>
       </section>
 
       <section aria-labelledby="h-vocabulary">
         <h2 id="h-vocabulary">Vocabulary</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="saveContext">Save the sentence with each word</label>
-            <p class="hint">The subtitle a word appeared in, which is what makes a saved word worth reviewing.</p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="saveContext">Save the sentence with each word</label>
+              <p class="hint">The subtitle a word appeared in, which is what makes a saved word worth reviewing.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="saveContext" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="saveContext" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label>Saved words</label>
-            <p class="hint" id="vocabulary-count">—</p>
-          </div>
-          <div class="shortcut-row">
-            <button type="button" class="ghost" id="open-vocabulary">Open list</button>
-            <button type="button" class="ghost danger" id="clear-vocabulary">Delete all</button>
+          <div class="field">
+            <div class="field-text">
+              <label>Saved words</label>
+              <p class="hint" id="vocabulary-count">—</p>
+            </div>
+            <div class="shortcut-row">
+              <button type="button" class="ghost" id="open-vocabulary">Open list</button>
+              <button type="button" class="ghost danger" id="clear-vocabulary">Delete all</button>
+            </div>
           </div>
         </div>
       </section>
 
       <section aria-labelledby="h-interaction">
         <h2 id="h-interaction">Interaction</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="clickToSelect">Click to select a word</label>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="clickToSelect">Click to select a word</label>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="clickToSelect" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="clickToSelect" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="pauseOnSelect">Pause the video while I read</label>
-            <p class="hint">
-              Pauses when you select a word and resumes when you clear it. Only ever
-              resumes a video SubSelect paused itself — press play at any time and it stays
-              out of the way.
-            </p>
+          <div class="field">
+            <div class="field-text">
+              <label for="pauseOnSelect">Pause the video while I read</label>
+              <p class="hint">
+                Pauses when you select a word and resumes when you clear it. Only ever
+                resumes a video SubSelect paused itself — press play at any time and it stays
+                out of the way.
+              </p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="pauseOnSelect" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="pauseOnSelect" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="dragToSelect">Drag to select a phrase</label>
+          <div class="field">
+            <div class="field-text">
+              <label for="dragToSelect">Drag to select a phrase</label>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="dragToSelect" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="dragToSelect" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="doubleClickToSelect">Double-click to select the whole caption</label>
+          <div class="field">
+            <div class="field-text">
+              <label for="doubleClickToSelect">Double-click to select the whole caption</label>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="doubleClickToSelect" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="doubleClickToSelect" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="shortcut">Keyboard shortcut</label>
-            <p class="hint">
-              Turns interactive subtitles on and off. Change it on Chrome's shortcuts page.
-            </p>
-          </div>
-          <div class="shortcut-row">
-            <kbd id="shortcut">Alt+Shift+S</kbd>
-            <button type="button" class="ghost" id="edit-shortcuts">Change</button>
+          <div class="field">
+            <div class="field-text">
+              <label for="shortcut">Keyboard shortcut</label>
+              <p class="hint">
+                Turns interactive subtitles on and off. Change it on Chrome's shortcuts page.
+              </p>
+            </div>
+            <div class="shortcut-row">
+              <kbd id="shortcut">Alt+Shift+S</kbd>
+              <button type="button" class="ghost" id="edit-shortcuts">Change</button>
+            </div>
           </div>
         </div>
       </section>
 
       <section aria-labelledby="h-menu">
         <h2 id="h-menu">Context menu</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="showContextMenu">Show the menu when I select something</label>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="showContextMenu">Show the menu when I select something</label>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="showContextMenu" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="showContextMenu" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="autoTranslate">Look up automatically on selection</label>
-            <p class="hint">
-              Translate as soon as you select a word, without pressing the button. With
-              this on, selecting a word is itself the request that leaves this device.
-            </p>
+          <div class="field">
+            <div class="field-text">
+              <label for="autoTranslate">Look up automatically on selection</label>
+              <p class="hint">
+                Translate as soon as you select a word, without pressing the button. With
+                this on, selecting a word is itself the request that leaves this device.
+              </p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoTranslate" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="autoTranslate" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="contextMenuPlacement">Menu position</label>
-            <p class="hint">Automatic keeps it off the picture and inside the player.</p>
+          <div class="field">
+            <div class="field-text">
+              <label for="contextMenuPlacement">Menu position</label>
+              <p class="hint">Automatic keeps it off the picture and inside the player.</p>
+            </div>
+            <select id="contextMenuPlacement">
+              <option value="auto">Automatic</option>
+              <option value="above">Above the subtitle</option>
+              <option value="below">Below the subtitle</option>
+            </select>
           </div>
-          <select id="contextMenuPlacement">
-            <option value="auto">Automatic</option>
-            <option value="above">Above the subtitle</option>
-            <option value="below">Below the subtitle</option>
-          </select>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="speechEnabled">Offer Pronounce</label>
-            <p class="hint" id="speech-hint">Uses your browser's built-in speech synthesis.</p>
+          <div class="field">
+            <div class="field-text">
+              <label for="speechEnabled">Offer Pronounce</label>
+              <p class="hint" id="speech-hint">Uses your browser's built-in speech synthesis.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="speechEnabled" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="speechEnabled" />
-            <span class="track" aria-hidden="true"></span>
-          </label>
         </div>
       </section>
 
       <section aria-labelledby="h-appearance">
         <h2 id="h-appearance">Appearance</h2>
-        <div class="field">
-          <div class="field-text">
-            <label for="theme">Theme</label>
-            <p class="hint">Applies to SubSelect's own surfaces, not to the site.</p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="theme">Theme</label>
+              <p class="hint">Applies to SubSelect's own surfaces, not to the site.</p>
+            </div>
+            <select id="theme">
+              <option value="system">Match system</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
           </div>
-          <select id="theme">
-            <option value="system">Match system</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-        <div class="field">
-          <div class="field-text">
-            <label for="highlightColor">Highlight colour</label>
-            <p class="hint">Shown behind selected words. Semi-transparent so the caption stays readable.</p>
-          </div>
-          <div class="colour-row">
-            <input type="color" id="highlightColor" />
-            <input type="range" id="highlightAlpha" min="20" max="90" step="5" aria-label="Highlight opacity" />
+          <div class="field">
+            <div class="field-text">
+              <label for="highlightColor">Highlight colour</label>
+              <p class="hint">Shown behind selected words. Semi-transparent so the caption stays readable.</p>
+            </div>
+            <div class="colour-row">
+              <input type="color" id="highlightColor" />
+              <input type="range" id="highlightAlpha" min="20" max="90" step="5" aria-label="Highlight opacity" />
+            </div>
           </div>
         </div>
         <div class="preview" id="preview" aria-hidden="true">
