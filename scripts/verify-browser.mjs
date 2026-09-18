@@ -279,10 +279,20 @@ try {
     console.log('   phrase:', await cdp.eval(`[...document.querySelectorAll('[data-ss-selected="true"]')].map(e=>e.textContent).join(' ')`));
 
     // Every menu action must actually run when clicked.
-    for (const label of ['Translate', 'Pronounce', 'Save', 'Copy']) {
+    for (const [action, label] of [
+      ['translate', 'Translate'],
+      ['pronounce', 'Pronounce'],
+      ['save', 'Save'],
+      ['copy', 'Copy'],
+    ]) {
+      // Drop any previous panel first: it sits above the buttons, so removing it after
+      // measuring would move them out from under the click.
+      await cdp.eval("document.querySelector('.subselect-menu-result')?.remove(); 1");
+      await sleep(120);
+
+      // Matched on the action id: the secondary buttons are icon-only and have no text.
       const spot = JSON.parse(
-        await cdp.eval(`(()=>{const b=[...document.querySelectorAll('.subselect-menu-item')]
-          .find(x=>x.textContent.includes(${JSON.stringify(label)}));
+        await cdp.eval(`(()=>{const b=document.querySelector('[data-ss-action="${action}"]');
           if(!b) return JSON.stringify({found:false});
           const r=b.getBoundingClientRect();
           return JSON.stringify({found:true,x:r.x+r.width/2,y:r.y+r.height/2})})()`),
@@ -291,8 +301,6 @@ try {
         check(`menu action "${label}" present`, false);
         continue;
       }
-      // Drop any previous panel, so a stale result cannot pass this check for us.
-      await cdp.eval("document.querySelector('.subselect-menu-result')?.remove(); 1");
       for (const type of ['mousePressed', 'mouseReleased']) {
         await cdp.send('Input.dispatchMouseEvent', {
           type, x: spot.x, y: spot.y, button: 'left', clickCount: 1,
@@ -300,12 +308,17 @@ try {
         });
         await sleep(60);
       }
-      // Generous: an on-device translator may have to load a language pack first.
-      await sleep(3000);
-      const panel = await cdp.eval(
-        `(()=>{const p=document.querySelector('.subselect-menu-result');
-          return p ? (p.dataset.ssState + ': ' + p.textContent.trim().slice(0,70)) : ''})()`,
-      );
+      // Wait for the panel to settle rather than guessing: a provider chain can take
+      // several seconds, and an on-device translator may be loading a language pack.
+      let panel = '';
+      for (let i = 0; i < 24; i++) {
+        await sleep(500);
+        panel = await cdp.eval(
+          `(()=>{const p=document.querySelector('.subselect-menu-result');
+            return p ? (p.dataset.ssState + ': ' + p.textContent.trim().slice(0,70)) : ''})()`,
+        );
+        if (panel && !panel.startsWith('loading')) break;
+      }
       check(`menu action "${label}" responds`, Boolean(panel), panel || 'no result panel');
     }
 

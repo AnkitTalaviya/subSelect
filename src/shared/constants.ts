@@ -27,6 +27,13 @@ export const CLASS = {
   menuForms: `${NS}-menu-forms`,
   menuRelated: `${NS}-menu-related`,
   menuExample: `${NS}-menu-example`,
+  menuSlot: `${NS}-menu-slot`,
+  menuArticle: `${NS}-menu-article`,
+  menuArticleWord: `${NS}-menu-article-word`,
+  menuSectionLabel: `${NS}-menu-section`,
+  menuChips: `${NS}-menu-chips`,
+  menuChip: `${NS}-menu-chip`,
+  menuItemCompact: `${NS}-menu-item-compact`,
 } as const;
 
 export const ATTR = {

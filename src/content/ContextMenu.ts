@@ -40,8 +40,43 @@ export interface ContextMenuCallbacks {
 interface MenuAction {
   id: string;
   label: string;
-  icon: string;
   run: () => void;
+}
+
+/**
+ * Inline SVG rather than emoji.
+ *
+ * Emoji render differently on every platform — colour, weight and baseline all shift —
+ * and cannot inherit the menu's text colour, so they fought the theme in dark and light
+ * alike. These are `currentColor`, so they simply match the label beside them.
+ */
+const ICONS: Record<string, string> = {
+  translate:
+    '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  pronounce: '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>',
+  save: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+};
+
+function icon(id: string): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', CLASS.menuIcon);
+  // Static markup from the map above; no user or provider text ever reaches here.
+  svg.innerHTML = ICONS[id] ?? '';
+  return svg;
+}
+
+function labelSpan(text: string): HTMLElement {
+  const span = document.createElement('span');
+  span.textContent = text;
+  return span;
 }
 
 interface MenuResult {
@@ -226,7 +261,6 @@ export class ContextMenu {
     actions.push({
       id: 'translate',
       label: 'Translate',
-      icon: '🌐',
       run: () => void this.runDetails(selection),
     });
 
@@ -234,7 +268,6 @@ export class ContextMenu {
       actions.push({
         id: 'pronounce',
         label: 'Pronounce',
-        icon: '🔊',
         run: () => void this.runPronounce(selection),
       });
     }
@@ -242,14 +275,12 @@ export class ContextMenu {
     actions.push({
       id: 'save',
       label: 'Save',
-      icon: '💾',
       run: () => void this.runSave(selection),
     });
 
     actions.push({
       id: 'copy',
       label: 'Copy',
-      icon: '📋',
       // Reported in the menu like every other action. The overlay's own "Copied ✓" flash
       // is easy to miss, and a refused clipboard write would otherwise be silent.
       run: () => {
@@ -430,15 +461,18 @@ export class ContextMenu {
       panel.appendChild(button);
     }
 
-    element.querySelector(`.${CLASS.menuResult}`)?.remove();
-    element.appendChild(panel);
+    // Into the slot between header and actions, so the answer appears under the word
+    // rather than beneath the buttons.
+    const slot = element.querySelector(`.${CLASS.menuSlot}`);
+    if (slot) slot.replaceChildren(panel);
+    else element.appendChild(panel);
 
     // The menu just changed height, so whatever placement it had is now wrong.
     this.callbacks.onResized();
   }
 
   private clearResult(): void {
-    this.element?.querySelector(`.${CLASS.menuResult}`)?.remove();
+    this.element?.querySelector(`.${CLASS.menuSlot}`)?.replaceChildren();
   }
 
   /**
@@ -450,20 +484,35 @@ export class ContextMenu {
    * than no label.
    */
   private renderDetails(panel: HTMLElement, details: WordDetails): void {
-    // "das Feuerwerk · neuter noun · Plural: die Feuerwerke · [ˈfɔɪ̯ɐˌvɛʁk]"
-    const grammarBits: string[] = [];
-    if (details.article) grammarBits.push(`${details.article} ${details.headword}`);
-    const kind = [details.gender, details.partOfSpeech?.toLowerCase()].filter(Boolean).join(' ');
-    if (kind) grammarBits.push(kind);
-    if (details.plural) {
-      grammarBits.push(`Plural: ${details.article ? 'die ' : ''}${details.plural}`);
-    }
-    if (details.ipa) grammarBits.push(`[${details.ipa}]`);
+    /*
+     * The article gets its own coloured chip rather than being one clause in a grey meta
+     * line. `der/die/das` is the single fact a learner most needs and most often forgets,
+     * and colour-coding gender is the mnemonic every German course reaches for — so it is
+     * given the strongest position in the panel instead of the weakest.
+     */
+    if (details.article) {
+      const chip = document.createElement('p');
+      chip.className = CLASS.menuArticle;
+      if (details.gender) chip.dataset.ssGender = details.gender;
 
-    if (grammarBits.length > 0) {
+      const article = document.createElement('span');
+      article.className = CLASS.menuArticleWord;
+      article.textContent = details.article;
+      chip.append(article, document.createTextNode(details.headword));
+      panel.appendChild(chip);
+    }
+
+    // "neuter noun · Plural: die Feuerwerke · [ˈfɔɪ̯ɐˌvɛʁk]"
+    const meta: string[] = [];
+    const kind = [details.gender, details.partOfSpeech?.toLowerCase()].filter(Boolean).join(' ');
+    if (kind) meta.push(kind);
+    if (details.plural) meta.push(`Plural: ${details.article ? 'die ' : ''}${details.plural}`);
+    if (details.ipa) meta.push(`[${details.ipa}]`);
+
+    if (meta.length > 0) {
       const line = document.createElement('p');
       line.className = CLASS.menuGrammar;
-      line.textContent = grammarBits.join(' · ');
+      line.textContent = meta.join(' · ');
       panel.appendChild(line);
     }
 
@@ -492,12 +541,26 @@ export class ContextMenu {
       ['Broader', details.hypernyms],
     ] as const) {
       if (!words || words.length === 0) continue;
-      const row = document.createElement('p');
+
+      const row = document.createElement('div');
       row.className = CLASS.menuRelated;
-      const tag = document.createElement('span');
-      tag.className = CLASS.menuPos;
+
+      const tag = document.createElement('p');
+      tag.className = CLASS.menuSectionLabel;
       tag.textContent = label;
-      row.append(tag, document.createTextNode(words.join(', ')));
+      row.appendChild(tag);
+
+      // Chips, not a comma list: each related word is a separate thing to take in, and a
+      // run-on line of them is the hardest possible way to read a set.
+      const chips = document.createElement('p');
+      chips.className = CLASS.menuChips;
+      for (const word of words) {
+        const chip = document.createElement('span');
+        chip.className = CLASS.menuChip;
+        chip.textContent = word;
+        chips.appendChild(chip);
+      }
+      row.appendChild(chips);
       panel.appendChild(row);
     }
 
@@ -556,6 +619,13 @@ export class ContextMenu {
     return table;
   }
 
+  /**
+   * Builds the menu: header, then the answer, then the actions.
+   *
+   * The answer sits directly under the word rather than below the buttons. Appending
+   * results after the action list buried the thing the user asked for underneath a row of
+   * things they had already finished with, and pushed it off the bottom on a short player.
+   */
   private renderContents(selection: SubtitleSelection): void {
     const element = this.element;
     if (!element) return;
@@ -576,6 +646,11 @@ export class ContextMenu {
       header.appendChild(context);
     }
 
+    // Scroll region between header and actions, so a long definition never scrolls the
+    // buttons out of reach.
+    const slot = document.createElement('div');
+    slot.className = CLASS.menuSlot;
+
     const list = document.createElement('div');
     list.className = `${CLASS.menu}-items`;
 
@@ -588,15 +663,20 @@ export class ContextMenu {
       // Roving tabindex: one stop into the menu, then arrow keys.
       button.tabIndex = index === 0 ? 0 : -1;
 
-      const icon = document.createElement('span');
-      icon.className = CLASS.menuIcon;
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = action.icon;
-
-      const label = document.createElement('span');
-      label.textContent = action.label;
-
-      button.append(icon, label);
+      /*
+       * Translate is why the menu opened, so it gets a full-width labelled button. The
+       * rest are icon-only: three labelled buttons across a 212px panel truncate, and a
+       * speaker, a bookmark and two sheets are recognisable without a caption. Both names
+       * are still exposed to assistive technology and on hover.
+       */
+      if (action.id === 'translate') {
+        button.append(icon(action.id), labelSpan(action.label));
+      } else {
+        button.classList.add(CLASS.menuItemCompact);
+        button.title = action.label;
+        button.setAttribute('aria-label', action.label);
+        button.appendChild(icon(action.id));
+      }
       button.addEventListener('click', (event) => {
         event.preventDefault();
         action.run();
@@ -605,7 +685,7 @@ export class ContextMenu {
     });
 
     list.append(...this.items);
-    element.replaceChildren(header, list);
+    element.replaceChildren(header, slot, list);
 
     // Speaking a word through a network voice sends it off the device, so say so rather
     // than let it happen silently (§33).

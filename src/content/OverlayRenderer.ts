@@ -176,6 +176,46 @@ export class OverlayRenderer {
     for (const id of this.selected) {
       this.wordElements.get(id)?.setAttribute(ATTR.selected, 'true');
     }
+    this.bridgeGaps();
+  }
+
+  /**
+   * Highlights the spaces *between* selected words, so a phrase reads as one mark.
+   *
+   * Only the words carry the highlight otherwise, and the gaps between them stay clear —
+   * which renders a four-word phrase as four separate boxes rather than one selection.
+   * Bridging is done per line, so a selection spanning two caption lines does not paint a
+   * band across the empty end of the first one.
+   */
+  private bridgeGaps(): void {
+    const layer = this.layer;
+    if (!layer) return;
+
+    for (const gap of layer.querySelectorAll(`.${CLASS.gap}[${ATTR.selected}]`)) {
+      gap.removeAttribute(ATTR.selected);
+    }
+    if (this.selected.size < 2) return;
+
+    for (const line of layer.querySelectorAll(`.${CLASS.lineInner}`)) {
+      const children = [...line.children];
+      const isSelectedWord = (node: Element): boolean =>
+        node.classList.contains(CLASS.word) && node.hasAttribute(ATTR.selected);
+
+      const first = children.findIndex(isSelectedWord);
+      if (first === -1) continue;
+      let last = first;
+      for (let i = children.length - 1; i > first; i--) {
+        if (isSelectedWord(children[i]!)) {
+          last = i;
+          break;
+        }
+      }
+
+      for (let i = first + 1; i < last; i++) {
+        const node = children[i]!;
+        if (node.classList.contains(CLASS.gap)) node.setAttribute(ATTR.selected, 'true');
+      }
+    }
   }
 
   getSelected(): Set<string> {

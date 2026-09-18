@@ -206,14 +206,28 @@
   background-color: transparent;
 }
 
-/* Readable over bright scenes, dark scenes, white/yellow captions and outlined text:
-   a translucent accent fill for the tint plus a hairline edge for the boundary. */
+/*
+ * Highlight: a marker stroke, not a box.
+ *
+ * A hard inset ring on every word turned a four-word phrase into four separate chips with
+ * visible seams. Instead the fill carries the selection, an accent line under it gives the
+ * edge that keeps it legible over a bright scene, and the gaps between selected words are
+ * filled too (see OverlayRenderer.bridgeGaps) so the whole phrase reads as one stroke.
+ * The soft drop shadow replaces the hard outer ring — same contrast on a pale frame,
+ * without the boxiness.
+ */
 .subselect-word[data-ss-selected='true'],
-.subselect-word[data-ss-selected='true']:hover {
+.subselect-word[data-ss-selected='true']:hover,
+.subselect-gap[data-ss-selected='true'] {
   background-color: var(--ss-highlight) !important;
   box-shadow:
-    inset 0 0 0 1px var(--ss-highlight-edge),
-    0 0 0 1px rgba(0, 0, 0, 0.55) !important;
+    inset 0 -0.11em 0 var(--ss-highlight-edge),
+    0 1px 3px rgba(0, 0, 0, 0.38) !important;
+}
+
+/* Only the ends of a phrase are rounded; the middle stays flush. */
+.subselect-gap[data-ss-selected='true'] {
+  border-radius: 0 !important;
 }
 
 .subselect-word:focus-visible {
@@ -270,6 +284,10 @@
  * Mounted inside the player container like the overlay, so it survives fullscreen. Its
  * own colours are fixed rather than inherited: it is SubSelect's surface, not the
  * player's caption, so it must not pick up a 40px yellow outlined caption font.
+ *
+ * Laid out as header / answer / actions, with only the middle scrolling. The answer sits
+ * under the word it describes, and the buttons stay reachable however long a definition
+ * turns out to be.
  */
 .subselect-menu {
   --ss-menu-x: 0px;
@@ -277,12 +295,19 @@
   /* Capped to the room beside the selection, so the menu can never cover the subtitle. */
   --ss-menu-max-h: none;
 
-  --ss-menu-bg: rgba(20, 22, 32, 0.97);
-  --ss-menu-fg: #f1f3fa;
-  --ss-menu-muted: #a3aabd;
-  --ss-menu-border: rgba(255, 255, 255, 0.12);
-  --ss-menu-hover: rgba(255, 255, 255, 0.09);
+  --ss-menu-bg: rgba(22, 24, 34, 0.98);
+  --ss-menu-raised: rgba(255, 255, 255, 0.045);
+  --ss-menu-fg: #f3f5fb;
+  --ss-menu-muted: #9aa2b8;
+  --ss-menu-faint: #6e7689;
+  --ss-menu-border: rgba(255, 255, 255, 0.1);
+  --ss-menu-hover: rgba(255, 255, 255, 0.08);
   --ss-menu-accent: #8fa6ff;
+
+  /* Gender colours: the mnemonic every German course uses. */
+  --ss-der: #6f9dff;
+  --ss-die: #ff86b0;
+  --ss-das: #4fd18b;
 
   position: absolute !important;
   left: var(--ss-menu-x) !important;
@@ -291,21 +316,21 @@
 
   display: flex !important;
   flex-direction: column !important;
-  gap: 2px !important;
   box-sizing: border-box !important;
-  min-width: 168px !important;
-  max-width: min(320px, 80vw) !important;
+  min-width: 212px !important;
+  max-width: min(330px, 84vw) !important;
   max-height: var(--ss-menu-max-h) !important;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
+  overflow: hidden !important;
   margin: 0 !important;
-  padding: 8px !important;
+  padding: 0 !important;
 
   background: var(--ss-menu-bg) !important;
   color: var(--ss-menu-fg) !important;
   border: 1px solid var(--ss-menu-border) !important;
-  border-radius: 10px !important;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 10px 34px rgba(0, 0, 0, 0.5) !important;
 
   font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   font-size: 13px !important;
@@ -323,6 +348,33 @@
   cursor: default !important;
   -webkit-user-select: none !important;
   user-select: none !important;
+
+  animation: subselect-menu-in 130ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* Rises from the direction it is anchored, so it reads as belonging to the word. */
+@keyframes subselect-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+
+.subselect-menu[data-ss-side='below'] {
+  animation-name: subselect-menu-in-below;
+}
+
+@keyframes subselect-menu-in-below {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subselect-menu {
+    animation: none;
+  }
 }
 
 .subselect-menu[data-ss-fixed='true'] {
@@ -339,36 +391,51 @@
 }
 
 .subselect-menu[data-ss-theme='light'] {
-  --ss-menu-bg: rgba(255, 255, 255, 0.98);
-  --ss-menu-fg: #171923;
-  --ss-menu-muted: #5d6478;
-  --ss-menu-border: rgba(0, 0, 0, 0.12);
-  --ss-menu-hover: rgba(0, 0, 0, 0.06);
-  --ss-menu-accent: #3f62e8;
+  --ss-menu-bg: rgba(255, 255, 255, 0.99);
+  --ss-menu-raised: rgba(16, 20, 34, 0.035);
+  --ss-menu-fg: #14161f;
+  --ss-menu-muted: #5c6478;
+  --ss-menu-faint: #8b93a6;
+  --ss-menu-border: rgba(16, 20, 34, 0.12);
+  --ss-menu-hover: rgba(16, 20, 34, 0.06);
+  --ss-menu-accent: #3552d4;
+  --ss-der: #2f5fd0;
+  --ss-die: #c33f77;
+  --ss-das: #1d8c55;
 }
 
 @media (prefers-color-scheme: light) {
   .subselect-menu[data-ss-theme='system'] {
-    --ss-menu-bg: rgba(255, 255, 255, 0.98);
-    --ss-menu-fg: #171923;
-    --ss-menu-muted: #5d6478;
-    --ss-menu-border: rgba(0, 0, 0, 0.12);
-    --ss-menu-hover: rgba(0, 0, 0, 0.06);
-    --ss-menu-accent: #3f62e8;
+    --ss-menu-bg: rgba(255, 255, 255, 0.99);
+    --ss-menu-raised: rgba(16, 20, 34, 0.035);
+    --ss-menu-fg: #14161f;
+    --ss-menu-muted: #5c6478;
+    --ss-menu-faint: #8b93a6;
+    --ss-menu-border: rgba(16, 20, 34, 0.12);
+    --ss-menu-hover: rgba(16, 20, 34, 0.06);
+    --ss-menu-accent: #3552d4;
+    --ss-der: #2f5fd0;
+    --ss-die: #c33f77;
+    --ss-das: #1d8c55;
   }
 }
 
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+
 .subselect-menu-header {
-  padding: 2px 6px 6px !important;
+  flex: none !important;
+  padding: 11px 14px 9px !important;
+  margin: 0 !important;
   border-bottom: 1px solid var(--ss-menu-border) !important;
-  margin-bottom: 4px !important;
 }
 
 .subselect-menu-term {
   margin: 0 !important;
   padding: 0 !important;
-  font-size: 15px !important;
-  font-weight: 600 !important;
+  font-size: 16px !important;
+  font-weight: 620 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em !important;
   color: var(--ss-menu-fg) !important;
   overflow-wrap: anywhere !important;
   /* The selected phrase is the one thing here worth selecting with the mouse. */
@@ -377,76 +444,36 @@
 }
 
 .subselect-menu-context {
-  margin: 3px 0 0 !important;
+  margin: 4px 0 0 !important;
   padding: 0 !important;
   font-size: 11.5px !important;
   font-weight: 400 !important;
-  color: var(--ss-menu-muted) !important;
+  line-height: 1.45 !important;
+  color: var(--ss-menu-faint) !important;
   overflow-wrap: anywhere !important;
   display: -webkit-box !important;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   overflow: hidden !important;
 }
 
-.subselect-menu-items {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 1px !important;
-}
+/* ── Answer ─────────────────────────────────────────────────────────────────── */
 
-.subselect-menu-item {
-  display: flex !important;
-  align-items: center !important;
-  gap: 9px !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  margin: 0 !important;
-  padding: 7px 8px !important;
-  border: 0 !important;
-  border-radius: 6px !important;
-  background: transparent !important;
-  color: var(--ss-menu-fg) !important;
-  font: inherit !important;
-  font-weight: 500 !important;
-  text-align: left !important;
-  cursor: pointer !important;
-  appearance: none !important;
-  -webkit-appearance: none !important;
-}
-
-.subselect-menu-item:hover {
-  background: var(--ss-menu-hover) !important;
-}
-
-.subselect-menu-item:focus-visible {
-  outline: 2px solid var(--ss-menu-accent) !important;
-  outline-offset: -2px;
-}
-
-.subselect-menu-icon {
-  font-size: 14px !important;
-  line-height: 1 !important;
-  flex: none !important;
-}
-
-.subselect-menu-note {
-  margin: 4px 6px 2px !important;
-  padding: 0 !important;
-  font-size: 11px !important;
-  line-height: 1.35 !important;
-  color: var(--ss-menu-muted) !important;
-}
-
-/* Result of a Translate / Definition / Save action. */
-.subselect-menu-result {
-  margin: 4px 0 0 !important;
-  padding: 8px 8px 6px !important;
-  border-top: 1px solid var(--ss-menu-border) !important;
-  /* Long definitions must not push the menu past the height of the player. */
-  max-height: 190px !important;
+/* The only scrolling region: header and actions stay put. */
+.subselect-menu-slot {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
+}
+
+.subselect-menu-slot:empty {
+  display: none !important;
+}
+
+.subselect-menu-result {
+  margin: 0 !important;
+  padding: 11px 14px !important;
   /* Answers are meant to be copied out, unlike the menu labels. */
   -webkit-user-select: text !important;
   user-select: text !important;
@@ -456,7 +483,7 @@
   margin: 0 !important;
   padding: 0 !important;
   font-size: 13px !important;
-  line-height: 1.45 !important;
+  line-height: 1.5 !important;
   color: var(--ss-menu-fg) !important;
   overflow-wrap: anywhere !important;
   /* When every provider in a chain fails, each one's reason is on its own line. */
@@ -468,6 +495,22 @@
   color: var(--ss-menu-muted) !important;
 }
 
+.subselect-menu-result[data-ss-state='loading'] .subselect-menu-result-text {
+  animation: subselect-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes subselect-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subselect-menu-result[data-ss-state='loading'] .subselect-menu-result-text {
+    animation: none;
+  }
+}
+
 .subselect-menu-result[data-ss-state='error'] .subselect-menu-result-text {
   color: #ff9d9d !important;
 }
@@ -476,44 +519,50 @@
   color: #b3261e !important;
 }
 
-.subselect-menu-senses {
-  margin: 0 !important;
-  padding: 0 0 0 16px !important;
-  list-style: decimal !important;
-  font-size: 12.5px !important;
-  line-height: 1.45 !important;
-  color: var(--ss-menu-fg) !important;
-}
-
-.subselect-menu-senses li {
-  margin: 0 0 5px !important;
+/* der / die / das — the fact a learner most needs, given the strongest position. */
+.subselect-menu-article {
+  margin: 0 0 3px !important;
   padding: 0 !important;
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em !important;
+  color: var(--ss-menu-fg) !important;
   overflow-wrap: anywhere !important;
 }
 
-.subselect-menu-pos {
-  display: inline-block !important;
-  margin-right: 6px !important;
-  color: var(--ss-menu-muted) !important;
-  font-style: italic !important;
-  font-size: 11.5px !important;
+.subselect-menu-article-word {
+  color: var(--ss-menu-accent) !important;
+  margin-right: 0.3em !important;
+  font-weight: 700 !important;
 }
 
-/* Learner panel: grammar line, translation, verb forms, related words. */
+.subselect-menu-article[data-ss-gender='masculine'] .subselect-menu-article-word {
+  color: var(--ss-der) !important;
+}
+
+.subselect-menu-article[data-ss-gender='feminine'] .subselect-menu-article-word {
+  color: var(--ss-die) !important;
+}
+
+.subselect-menu-article[data-ss-gender='neuter'] .subselect-menu-article-word {
+  color: var(--ss-das) !important;
+}
+
 .subselect-menu-grammar {
-  margin: 0 0 6px !important;
+  margin: 0 0 9px !important;
   padding: 0 !important;
-  font-size: 11.5px !important;
+  font-size: 11px !important;
   font-weight: 500 !important;
-  line-height: 1.4 !important;
-  color: var(--ss-menu-muted) !important;
-  letter-spacing: 0.01em !important;
+  line-height: 1.45 !important;
+  color: var(--ss-menu-faint) !important;
+  letter-spacing: 0.015em !important;
 }
 
 .subselect-menu-translation {
-  margin: 0 0 8px !important;
+  margin: 0 !important;
   padding: 0 !important;
-  font-size: 16px !important;
+  font-size: 17px !important;
   font-weight: 600 !important;
   line-height: 1.35 !important;
   color: var(--ss-menu-fg) !important;
@@ -523,46 +572,118 @@
 .subselect-menu-forms {
   display: grid !important;
   grid-template-columns: auto 1fr !important;
-  gap: 1px 10px !important;
-  margin: 0 0 8px !important;
-  padding: 6px 8px !important;
-  border-radius: 6px !important;
-  background: var(--ss-menu-hover) !important;
+  gap: 3px 12px !important;
+  margin: 11px 0 0 !important;
+  padding: 9px 11px !important;
+  border-radius: 9px !important;
+  background: var(--ss-menu-raised) !important;
   font-size: 12px !important;
 }
 
 .subselect-menu-forms dt {
   margin: 0 !important;
-  color: var(--ss-menu-muted) !important;
+  color: var(--ss-menu-faint) !important;
   white-space: nowrap !important;
 }
 
 .subselect-menu-forms dd {
   margin: 0 !important;
   color: var(--ss-menu-fg) !important;
-  font-weight: 500 !important;
+  font-weight: 550 !important;
   overflow-wrap: anywhere !important;
 }
 
-.subselect-menu-related {
-  margin: 6px 0 0 !important;
-  padding: 0 !important;
-  font-size: 12px !important;
-  line-height: 1.45 !important;
+.subselect-menu-senses {
+  margin: 11px 0 0 !important;
+  padding: 0 0 0 17px !important;
+  list-style: decimal !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
   color: var(--ss-menu-fg) !important;
+}
+
+.subselect-menu-senses::marker,
+.subselect-menu-senses li::marker {
+  color: var(--ss-menu-faint) !important;
+}
+
+.subselect-menu-senses li {
+  margin: 0 0 7px !important;
+  padding: 0 !important;
   overflow-wrap: anywhere !important;
+}
+
+.subselect-menu-senses li:last-child {
+  margin-bottom: 0 !important;
+}
+
+.subselect-menu-pos {
+  display: inline-block !important;
+  margin-right: 6px !important;
+  color: var(--ss-menu-faint) !important;
+  font-style: italic !important;
+  font-size: 11px !important;
 }
 
 .subselect-menu-example {
   display: block !important;
-  margin-top: 2px !important;
+  margin-top: 3px !important;
+  padding-left: 8px !important;
+  border-left: 2px solid var(--ss-menu-border) !important;
   color: var(--ss-menu-muted) !important;
   font-style: italic !important;
 }
 
+.subselect-menu-section {
+  margin: 12px 0 5px !important;
+  padding: 0 !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.09em !important;
+  text-transform: uppercase !important;
+  color: var(--ss-menu-faint) !important;
+}
+
+.subselect-menu-chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.subselect-menu-chip {
+  display: inline-block !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  background: var(--ss-menu-raised) !important;
+  border: 1px solid var(--ss-menu-border) !important;
+  color: var(--ss-menu-fg) !important;
+  font-size: 11.5px !important;
+  line-height: 1.5 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.subselect-menu-note {
+  margin: 10px 0 0 !important;
+  padding: 0 !important;
+  font-size: 10.5px !important;
+  line-height: 1.4 !important;
+  color: var(--ss-menu-faint) !important;
+}
+
+/* A note sitting directly in the menu is a footer, so it needs the menu's own gutters —
+   inside the result panel it inherits that panel's padding instead. */
+.subselect-menu > .subselect-menu-note {
+  flex: none !important;
+  margin: 0 !important;
+  padding: 0 14px 10px !important;
+  border-top: 0 !important;
+}
+
 .subselect-menu-link {
   display: inline-block !important;
-  margin: 6px 0 0 !important;
+  margin: 8px 0 0 !important;
   padding: 0 !important;
   border: 0 !important;
   background: none !important;
@@ -574,6 +695,90 @@
   cursor: pointer !important;
   appearance: none !important;
   -webkit-appearance: none !important;
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────────── */
+
+.subselect-menu-items {
+  flex: none !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin: 0 !important;
+  padding: 6px !important;
+  border-top: 1px solid var(--ss-menu-border) !important;
+}
+
+.subselect-menu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 7px 9px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--ss-menu-muted) !important;
+  font: inherit !important;
+  font-size: 12.5px !important;
+  font-weight: 550 !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  transition: background-color 110ms ease, color 110ms ease;
+}
+
+/* Translate is the reason the menu opened; it takes the room and the accent. */
+.subselect-menu-item[data-ss-action='translate'] {
+  flex: 1 1 auto !important;
+  background: var(--ss-menu-raised) !important;
+  color: var(--ss-menu-fg) !important;
+  font-weight: 600 !important;
+}
+
+/* Icon-only secondary actions: a fixed square, so nothing can truncate. */
+.subselect-menu-item-compact {
+  flex: none !important;
+  width: 32px !important;
+  justify-content: center !important;
+  padding: 7px 0 !important;
+}
+
+.subselect-menu-item[data-ss-action='translate'] .subselect-menu-icon {
+  color: var(--ss-menu-accent) !important;
+}
+
+.subselect-menu-item:hover {
+  background: var(--ss-menu-hover) !important;
+  color: var(--ss-menu-fg) !important;
+}
+
+.subselect-menu-item:active {
+  transform: translateY(0.5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subselect-menu-item {
+    transition: none;
+  }
+  .subselect-menu-item:active {
+    transform: none;
+  }
+}
+
+.subselect-menu-item:focus-visible {
+  outline: 2px solid var(--ss-menu-accent) !important;
+  outline-offset: -2px;
+}
+
+.subselect-menu-icon {
+  width: 15px !important;
+  height: 15px !important;
+  flex: none !important;
+  opacity: 0.9;
 }
 
 /*
