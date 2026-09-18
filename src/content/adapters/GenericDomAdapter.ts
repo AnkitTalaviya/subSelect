@@ -256,16 +256,27 @@ export class GenericDomAdapter implements SubtitleAdapter {
     this.rootObserver = null;
   }
 
-  /** Uses the site's own declaration when there is one; never guesses from the text (§25). */
+  /**
+   * The caption's language, from the site's own declaration where there is one (§25).
+   *
+   * A `lang` attribute is only trusted when it sits **inside the player**. The document
+   * root's `lang` is the interface language, not the subtitle language — trusting it meant
+   * German captions on an English-language page were looked up as English, and a
+   * dictionary would report no entry for a perfectly ordinary German word.
+   */
   private detectLanguage(): string | undefined {
-    const declared = this.container?.closest('[lang]')?.getAttribute('lang');
-    if (declared) return declared;
-
     const tracks = this.context?.video.textTracks;
     if (tracks) {
       for (const track of tracks) {
         if (track.mode !== 'disabled' && track.language) return track.language;
       }
+    }
+
+    const root = this.context?.playerRoot;
+    const tagged = this.container?.closest('[lang]');
+    if (tagged && root && root.contains(tagged)) {
+      const declared = tagged.getAttribute('lang');
+      if (declared) return declared;
     }
 
     return this.context?.language;

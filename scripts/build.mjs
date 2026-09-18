@@ -89,6 +89,7 @@ const bundles = [
   htmlBundle('popup'),
   htmlBundle('options'),
   htmlBundle('vocabulary'),
+  htmlBundle('welcome'),
   contentBundle,
   iifeBundle('service-worker', 'src/background/service-worker.ts'),
 ];

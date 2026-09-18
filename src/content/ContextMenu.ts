@@ -60,6 +60,15 @@ export class ContextMenu {
   private visible = false;
   /** Carried into Save, so saving after translating keeps the translation (§19). */
   private lastTranslation: string | null = null;
+  /**
+   * Identifies the action currently allowed to write a result.
+   *
+   * Provider calls take time, and a slow one finishing after the user has moved on used to
+   * overwrite whatever had replaced it — a late translation landing on top of "Copied ✓",
+   * or worse, appearing under a different word than the one it was asked about. Each run
+   * takes a token and only writes a result while that token is still current.
+   */
+  private runToken = 0;
 
   constructor(
     private readonly host: HTMLElement,
@@ -79,6 +88,7 @@ export class ContextMenu {
 
     const element = this.ensureElement();
     // A new selection means any previous answer is about a different word.
+    this.beginRun();
     this.lastTranslation = null;
     this.renderContents(selection);
     this.clearResult();
@@ -245,14 +255,17 @@ export class ContextMenu {
       icon: '📋',
       // Reported in the menu like every other action. The overlay's own "Copied ✓" flash
       // is easy to miss, and a refused clipboard write would otherwise be silent.
-      run: () =>
+      run: () => {
+        const token = this.beginRun();
         void this.callbacks.onCopy(selection.text).then((ok) =>
           this.setResult(
             ok
               ? { state: 'ok', text: 'Copied ✓' }
               : { state: 'error', text: 'Could not copy — the page blocked clipboard access.' },
+            token,
           ),
-        ),
+        );
+      },
     });
 
     return actions;
@@ -261,7 +274,8 @@ export class ContextMenu {
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   private async runTranslate(selection: SubtitleSelection): Promise<void> {
-    this.setResult({ state: 'loading', text: 'Translating…' });
+    const token = this.beginRun();
+    this.setResult({ state: 'loading', text: 'Translating…' }, token);
 
     const outcome = await sendMessage({
       type: 'TRANSLATE_SELECTION',
@@ -271,20 +285,21 @@ export class ContextMenu {
     });
 
     if (!outcome) {
-      this.setResult({ state: 'error', text: "Couldn't retrieve translation. Try again." });
+      this.setResult({ state: 'error', text: "Couldn't retrieve translation. Try again." }, token);
       return;
     }
     if (!outcome.ok) {
-      this.showProviderProblem(outcome);
+      this.showProviderProblem(outcome, token);
       return;
     }
 
     this.lastTranslation = outcome.data.text;
-    this.setResult({ state: 'ok', text: outcome.data.text, via: outcome.data.providerId });
+    this.setResult({ state: 'ok', text: outcome.data.text, via: outcome.data.providerId }, token);
   }
 
   private async runLookup(selection: SubtitleSelection): Promise<void> {
-    this.setResult({ state: 'loading', text: 'Looking up…' });
+    const token = this.beginRun();
+    this.setResult({ state: 'loading', text: 'Looking up…' }, token);
 
     // The headword, not the raw slice: a dictionary wants `geht's`, not `geht's?` (§40).
     const word = selection.words.find((candidate) => candidate.isWordLike);
@@ -297,15 +312,15 @@ export class ContextMenu {
     });
 
     if (!outcome) {
-      this.setResult({ state: 'error', text: "Couldn't retrieve the definition. Try again." });
+      this.setResult({ state: 'error', text: "Couldn't retrieve the definition. Try again." }, token);
       return;
     }
     if (!outcome.ok) {
-      this.showProviderProblem(outcome);
+      this.showProviderProblem(outcome, token);
       return;
     }
 
-    this.setResult({ state: 'ok', senses: outcome.data.senses, via: outcome.data.providerId });
+    this.setResult({ state: 'ok', senses: outcome.data.senses, via: outcome.data.providerId }, token);
   }
 
   /**
@@ -317,9 +332,10 @@ export class ContextMenu {
    * synthesis is the floor underneath it and always runs if the audio does not.
    */
   private async runPronounce(selection: SubtitleSelection): Promise<void> {
+    const token = this.beginRun();
     const speakIt = (): void => {
-      if (speak(selection.text, selection.language)) this.setResult({ state: 'ok', text: 'Speaking…' });
-      else this.setResult({ state: 'error', text: 'Could not pronounce this.' });
+      if (speak(selection.text, selection.language)) this.setResult({ state: 'ok', text: 'Speaking…' }, token);
+      else this.setResult({ state: 'error', text: 'Could not pronounce this.' }, token);
     };
 
     if (this.settings.pronunciationProvider !== 'wikimedia') {
@@ -327,7 +343,7 @@ export class ContextMenu {
       return;
     }
 
-    this.setResult({ state: 'loading', text: 'Finding a recording…' });
+    this.setResult({ state: 'loading', text: 'Finding a recording…' }, token);
     const outcome = await sendMessage({
       type: 'FIND_PRONUNCIATION',
       text: selection.text,
@@ -343,7 +359,7 @@ export class ContextMenu {
       const audio = new Audio(outcome.data.url);
       audio.addEventListener('error', speakIt, { once: true });
       await audio.play();
-      this.setResult({ state: 'ok', text: outcome.data.title, via: 'Wikimedia' });
+      this.setResult({ state: 'ok', text: outcome.data.title, via: 'Wikimedia' }, token);
     } catch {
       // A page Content-Security-Policy can refuse cross-origin media even to us.
       speakIt();
@@ -351,6 +367,7 @@ export class ContextMenu {
   }
 
   private async runSave(selection: SubtitleSelection): Promise<void> {
+    const token = this.beginRun();
     const outcome = await sendMessage({
       type: 'SAVE_WORD',
       word: {
@@ -364,9 +381,9 @@ export class ContextMenu {
 
     if (outcome?.ok) {
       const total = outcome.data.total;
-      this.setResult({ state: 'ok', text: `Saved · ${total} ${total === 1 ? 'word' : 'words'}` });
+      this.setResult({ state: 'ok', text: `Saved · ${total} ${total === 1 ? 'word' : 'words'}` }, token);
     } else {
-      this.setResult({ state: 'error', text: outcome?.message ?? 'Could not save this word.' });
+      this.setResult({ state: 'error', text: outcome?.message ?? 'Could not save this word.' }, token);
     }
   }
 
@@ -377,20 +394,36 @@ export class ContextMenu {
    * has not been approved to receive text yet, so the menu asks by name rather than
    * failing (§33).
    */
-  private showProviderProblem(outcome: { kind: string; message: string; origin?: string }): void {
+  private showProviderProblem(
+    outcome: { kind: string; message: string; origin?: string },
+    token?: number,
+  ): void {
+    // `no-permission` means lookups are off or Chrome revoked access — both fixed in
+    // settings. Everything else is a service that could not answer, which is not the
+    // user's to fix, so it reads as an error and offers no misleading link.
     const needsSettings = outcome.kind === 'not-configured' || outcome.kind === 'no-permission';
-    this.setResult({
-      state: needsSettings ? 'notice' : 'error',
-      text: outcome.message,
-      settingsLink: needsSettings,
-    });
+    this.setResult(
+      {
+        state: needsSettings ? 'notice' : 'error',
+        text: outcome.message,
+        settingsLink: needsSettings,
+      },
+      token,
+    );
   }
 
   // ── Result area ─────────────────────────────────────────────────────────────
 
-  private setResult(result: MenuResult): void {
+  /** Begins an action, invalidating any result still in flight from a previous one. */
+  private beginRun(): number {
+    return ++this.runToken;
+  }
+
+  private setResult(result: MenuResult, token?: number): void {
     const element = this.element;
     if (!element) return;
+    // A superseded action has nothing useful left to say.
+    if (token !== undefined && token !== this.runToken) return;
 
     const panel = document.createElement('div');
     panel.className = CLASS.menuResult;

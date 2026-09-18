@@ -459,6 +459,8 @@
   line-height: 1.45 !important;
   color: var(--ss-menu-fg) !important;
   overflow-wrap: anywhere !important;
+  /* When every provider in a chain fails, each one's reason is on its own line. */
+  white-space: pre-line !important;
 }
 
 .subselect-menu-result[data-ss-state='loading'] .subselect-menu-result-text,

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to SubSelect</title>
+    <link rel="stylesheet" href="./welcome.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="mark" aria-hidden="true"></span>
+        <h1>SubSelect</h1>
+        <p class="lede">Click a word in any subtitle to look it up, hear it, and keep it.</p>
+      </header>
+
+      <section class="panel">
+        <h2>How it works</h2>
+        <ul class="steps">
+          <li><strong>Click</strong> a word, or drag across several, while a video plays.</li>
+          <li><strong>Translate</strong>, <strong>Definition</strong> and <strong>Pronounce</strong> appear right next to it.</li>
+          <li><strong>Save</strong> keeps the word with the sentence you met it in.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Before you start</h2>
+        <p>
+          Translation, definitions and recordings come from free public services. To use
+          them, SubSelect sends <em>the word or phrase you selected</em> — and the subtitle
+          line around it, which is what makes a translation accurate — to whichever service
+          answers first:
+        </p>
+        <ul class="services">
+          <li><span class="host">api.mymemory.translated.net</span> translation</li>
+          <li><span class="host">lingva.ml</span> translation, if the first is unavailable</li>
+          <li><span class="host">*.wiktionary.org</span> definitions and pronunciation recordings</li>
+          <li><span class="host">api.dictionaryapi.dev</span> definitions, if Wiktionary has no entry</li>
+        </ul>
+        <p class="fine">
+          Nothing is sent until you press Translate, Definition or Pronounce on a word you
+          chose. There is no background traffic, no analytics, and no account. Saved words
+          and settings stay in this browser and are never uploaded. Your subtitles, viewing
+          history and the videos themselves are never read, recorded or transmitted.
+        </p>
+        <p class="fine">
+          These are third-party services with their own terms and privacy policies. If you
+          would rather keep everything on this device, decline — clicking, selecting,
+          copying and saving all work with no network at all, and you can turn lookups on
+          later in Settings.
+        </p>
+      </section>
+
+      <div class="actions">
+        <button type="button" class="primary" id="accept">I agree — turn on lookups</button>
+        <button type="button" class="ghost" id="decline">Not now</button>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+
+      <section class="panel done" id="done" hidden>
+        <h2>You're set</h2>
+        <p>
+          Open a video, turn its subtitles on, and click a word. SubSelect runs on YouTube,
+          Netflix, Prime Video, Disney+, Hotstar, Twitch, Vimeo, Crunchyroll, Max, Apple TV+
+          and Plex. Anywhere else, use <strong>Enable on this site</strong> in the toolbar
+          popup.
+        </p>
+        <button type="button" class="ghost" id="open-settings">Open settings</button>
+      </section>
+    </main>
+    <script type="module" src="./welcome.ts"></script>
+  </body>
+</html>

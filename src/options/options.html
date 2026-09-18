@@ -64,10 +64,17 @@
 
       <section aria-labelledby="h-providers">
         <h2 id="h-providers">Providers</h2>
+        <div class="field lookups">
+          <div class="field-text">
+            <label id="lookups-label">Online lookups</label>
+            <p class="hint" id="lookups-hint"></p>
+          </div>
+          <button type="button" class="ghost" id="lookups-toggle">Turn on</button>
+        </div>
         <p class="note lead">
-          SubSelect contacts nothing until you set a provider up here. Providers marked
-          <em>online</em> receive the text you select; you have to approve each one by name
-          before a single request is made.
+          <strong>Automatic</strong> tries the free keyless services in turn and uses
+          whichever answers first, so one being down or rate limited is not a dead end.
+          Pick a single provider instead if you prefer one, or want to use your own key.
         </p>
 
         <div class="field">
@@ -76,7 +83,8 @@
             <p class="hint" id="translation-status"></p>
           </div>
           <select id="translationProvider">
-            <option value="none">Not set up</option>
+            <option value="auto">Automatic — free services, with fallback</option>
+            <option value="none">Off</option>
             <option value="chrome-ondevice">On-device (Chrome built-in)</option>
             <option value="libretranslate">LibreTranslate — open source (online)</option>
             <option value="lingva">Lingva Translate — open source (online)</option>
@@ -99,13 +107,6 @@
           </div>
           <input type="password" id="translationApiKey" autocomplete="off" spellcheck="false" />
         </div>
-        <div class="field" id="translation-approve-field" hidden>
-          <div class="field-text">
-            <label id="translation-approve-label">Approval</label>
-            <p class="hint" id="translation-approve-hint"></p>
-          </div>
-          <button type="button" class="ghost" id="translation-approve">Approve</button>
-        </div>
 
         <div class="field spaced">
           <div class="field-text">
@@ -113,7 +114,8 @@
             <p class="hint" id="dictionary-status"></p>
           </div>
           <select id="dictionaryProvider">
-            <option value="none">Not set up</option>
+            <option value="auto">Automatic — free services, with fallback</option>
+            <option value="none">Off</option>
             <option value="wiktionary">Wiktionary — open data (online, no key)</option>
             <option value="free-dictionary">Free Dictionary API — open source (online, no key)</option>
             <option value="custom">Custom endpoint (online)</option>
@@ -126,13 +128,6 @@
           </div>
           <input type="url" id="dictionaryEndpoint" placeholder="https://…" spellcheck="false" />
         </div>
-        <div class="field" id="dictionary-approve-field" hidden>
-          <div class="field-text">
-            <label id="dictionary-approve-label">Approval</label>
-            <p class="hint" id="dictionary-approve-hint"></p>
-          </div>
-          <button type="button" class="ghost" id="dictionary-approve">Approve</button>
-        </div>
 
         <div class="field spaced">
           <div class="field-text">
@@ -143,13 +138,6 @@
             <option value="browser">Speech synthesis (offline)</option>
             <option value="wikimedia">Wikimedia recordings — human voices (online)</option>
           </select>
-        </div>
-        <div class="field" id="pronunciation-approve-field" hidden>
-          <div class="field-text">
-            <label id="pronunciation-approve-label">Approval</label>
-            <p class="hint" id="pronunciation-approve-hint"></p>
-          </div>
-          <button type="button" class="ghost" id="pronunciation-approve">Approve</button>
         </div>
       </section>
 

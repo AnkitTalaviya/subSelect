@@ -1,14 +1,13 @@
 import { SUPPORTED_LANGUAGES, type LanguageCode } from '@shared/constants';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { getSettings, setSettings } from '@shared/storage';
-import { hostOf, originOf } from '../providers/url';
+import { defaultOrigins } from '../providers/registry';
 import {
   DEFAULT_ENDPOINTS,
   PUBLIC_INSTANCES,
   isOnDeviceTranslationPresent,
   onDeviceAvailability,
 } from '../providers/translation/providers';
-import { wiktionaryHostFor } from '../providers/pronunciation/providers';
 import { clearVocabulary, getVocabularyCount } from '../vocabulary/VocabularyManager';
 
 /**
@@ -123,100 +122,46 @@ function render(settings: Settings): void {
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 /**
- * Where a provider's requests would go, or null for a local or unset provider.
+ * One switch for all online lookups.
  *
- * The origin is derived from the endpoint rather than assumed to be `https://<host>`: a
- * self-hosted LibreTranslate is commonly plain `http` on a local port, and assuming https
- * would leave it permanently unapprovable.
- */
-interface ProviderTarget {
-  host: string;
-  origin: string;
-}
-
-function targetFor(endpoint: string): ProviderTarget | null {
-  const host = hostOf(endpoint);
-  const origin = originOf(endpoint);
-  return host && origin ? { host, origin } : null;
-}
-
-function translationTarget(settings: Settings): ProviderTarget | null {
-  switch (settings.translationProvider) {
-    case 'libretranslate':
-    case 'custom':
-      return targetFor(settings.translationEndpoint);
-    case 'deepl':
-      return targetFor(settings.translationEndpoint || DEFAULT_ENDPOINTS.deepl!);
-    default:
-      return null;
-  }
-}
-
-function dictionaryTarget(settings: Settings): ProviderTarget | null {
-  switch (settings.dictionaryProvider) {
-    case 'wiktionary':
-      return { host: 'en.wiktionary.org', origin: 'https://en.wiktionary.org/*' };
-    case 'free-dictionary':
-      return { host: 'api.dictionaryapi.dev', origin: 'https://api.dictionaryapi.dev/*' };
-    case 'custom':
-      return targetFor(settings.dictionaryEndpoint);
-    default:
-      return null;
-  }
-}
-
-function pronunciationTarget(settings: Settings): ProviderTarget | null {
-  if (settings.pronunciationProvider !== 'wikimedia') return null;
-  // Recordings live on the Wiktionary edition for the subtitle language.
-  const host = wiktionaryHostFor(settings.subtitleLanguage);
-  return { host, origin: `https://${host}/*` };
-}
-
-/**
- * Shows whether a remote provider is approved, and offers the approval.
+ * This replaced a per-host approval prompt. Approving each service the first time it was
+ * reached for meant a wall of interruptions before the product did anything useful, and
+ * with a provider chain there is no single host to name up front anyway. So it is one
+ * decision, taken on the welcome screen or here, covering the default free services —
+ * and Chrome's host permissions remain the second gate, so revoking access in the browser
+ * still stops everything regardless of this setting.
  *
- * Approval is two things at once, and both have to be true before a request is made: the
- * Chrome host permission, and the user's recorded agreement that this host may receive
- * selected text (§33). They are granted together here because this is the only context
- * that can call `chrome.permissions.request` — a content script cannot.
+ * `chrome.permissions.request` needs a user gesture on an extension page, which is why
+ * this lives here and not in the content script.
  */
-async function renderApproval(
-  kind: 'translation' | 'dictionary' | 'pronunciation',
-  target: ProviderTarget | null,
-  settings: Settings,
-): Promise<void> {
-  const field = el<HTMLElement>(`${kind}-approve-field`);
-  const hint = el<HTMLElement>(`${kind}-approve-hint`);
-  const button = el<HTMLButtonElement>(`${kind}-approve`);
+async function renderLookups(settings: Settings): Promise<void> {
+  const hint = el<HTMLElement>('lookups-hint');
+  const button = el<HTMLButtonElement>('lookups-toggle');
 
-  if (!target) {
-    field.hidden = true;
-    return;
-  }
-
-  field.hidden = false;
-  const { host, origin } = target;
   const granted =
-    settings.consentedHosts.includes(host) &&
-    (await chrome.permissions.contains({ origins: [origin] }));
+    settings.termsAcceptedAt > 0 &&
+    (await chrome.permissions.contains({ origins: defaultOrigins() }));
 
   if (granted) {
-    hint.textContent = `Approved. Selected text is sent to ${host} when you use this action.`;
-    button.textContent = 'Approved';
-    button.dataset.state = 'approved';
-    button.disabled = true;
+    hint.textContent =
+      'On. The word you select is sent to a free service only when you press Translate, Definition or Pronounce.';
+    button.textContent = 'Turn off';
+    button.onclick = () => {
+      void chrome.permissions
+        .remove({ origins: defaultOrigins() })
+        .then(() => save({ termsAcceptedAt: 0 }));
+    };
     return;
   }
 
-  hint.textContent = `Not approved yet. Nothing is sent to ${host} until you approve it.`;
-  button.textContent = 'Approve';
-  delete button.dataset.state;
-  button.disabled = false;
+  hint.textContent = settings.termsAcceptedAt > 0
+    ? 'Access was revoked in Chrome. Turn it on again to use lookups.'
+    : 'Off. Selecting, copying and saving still work — nothing is sent anywhere.';
+  button.textContent = 'Turn on';
   button.onclick = () => {
-    void chrome.permissions.request({ origins: [origin] }).then(async (ok) => {
+    void chrome.permissions.request({ origins: defaultOrigins() }).then(async (ok) => {
       if (!ok) return;
-      const current = await getSettings();
-      await save({ consentedHosts: [...new Set([...current.consentedHosts, host])] });
+      await save({ termsAcceptedAt: Date.now() });
     });
   };
 }
@@ -257,8 +202,13 @@ async function renderProviders(settings: Settings): Promise<void> {
   }
 
   const status = el<HTMLElement>('translation-status');
-  if (provider === 'none') {
-    status.textContent = 'Translate will say it is not set up.';
+  if (provider === 'auto') {
+    const chain = isOnDeviceTranslationPresent()
+      ? 'On-device, then MyMemory, then Lingva.'
+      : 'MyMemory, then Lingva. This browser has no built-in translator.';
+    status.textContent = `Tries each in turn until one answers: ${chain}`;
+  } else if (provider === 'none') {
+    status.textContent = 'Translate will say it is switched off.';
   } else if (provider === 'chrome-ondevice') {
     if (!isOnDeviceTranslationPresent()) {
       status.textContent = 'This browser has no built-in translator. Choose another provider.';
@@ -280,18 +230,18 @@ async function renderProviders(settings: Settings): Promise<void> {
 
   el<HTMLElement>('dictionary-endpoint-field').hidden = settings.dictionaryProvider !== 'custom';
   el<HTMLElement>('dictionary-status').textContent =
-    settings.dictionaryProvider === 'none'
-      ? 'Definition will say it is not set up.'
-      : 'Online provider. The selected word is sent to it when you press Definition.';
+    settings.dictionaryProvider === 'auto'
+      ? 'Tries each in turn until one answers: Wiktionary, then the Free Dictionary API.'
+      : settings.dictionaryProvider === 'none'
+        ? 'Definition will say it is switched off.'
+        : 'Online provider. The selected word is sent to it when you press Definition.';
 
   el<HTMLElement>('pronunciation-status').textContent =
     settings.pronunciationProvider === 'wikimedia'
       ? 'Plays a native-speaker recording from Wiktionary / Lingua Libre, and falls back to speech synthesis when there is none.'
       : 'Your browser reads the word aloud. Works offline.';
 
-  await renderApproval('translation', translationTarget(settings), settings);
-  await renderApproval('dictionary', dictionaryTarget(settings), settings);
-  await renderApproval('pronunciation', pronunciationTarget(settings), settings);
+  await renderLookups(settings);
 }
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null;

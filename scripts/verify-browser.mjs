@@ -300,7 +300,8 @@ try {
         });
         await sleep(60);
       }
-      await sleep(900);
+      // Generous: an on-device translator may have to load a language pack first.
+      await sleep(3000);
       const panel = await cdp.eval(
         `(()=>{const p=document.querySelector('.subselect-menu-result');
           return p ? (p.dataset.ssState + ': ' + p.textContent.trim().slice(0,70)) : ''})()`,

@@ -109,6 +109,20 @@ class OnDeviceTranslationProvider implements TranslationProvider {
       );
     }
 
+    /*
+     * Anything other than "available" means a language pack still has to be fetched, which
+     * can take minutes. Waiting on that leaves the user watching "Translating…" for a word
+     * a remote service would have returned instantly, so the download is started in the
+     * background and the chain is allowed to move on. The next request finds it ready.
+     */
+    if (availability !== 'available') {
+      void api.create({ sourceLanguage, targetLanguage }).catch(() => {});
+      throw new ProviderError(
+        'unavailable',
+        `The built-in translator is preparing ${sourceLanguage} → ${targetLanguage}; it will be ready shortly.`,
+      );
+    }
+
     const translator = await api.create({ sourceLanguage, targetLanguage });
     try {
       return {
@@ -258,8 +272,65 @@ class LingvaProvider implements TranslationProvider {
   }
 }
 
+/**
+ * MyMemory — a free translation memory API with no key and no signup.
+ *
+ *   GET /get?q=<text>&langpair=de|en  →  { responseData: { translatedText }, responseStatus }
+ *
+ * Anonymous use is rate limited per day, which is why it sits in a chain rather than
+ * standing alone. It is reliable in a way volunteer-run instances are not, so it is the
+ * remote translator SubSelect reaches for first.
+ */
+const MYMEMORY_ENDPOINT = 'https://api.mymemory.translated.net/get';
+export const MYMEMORY_ORIGIN = 'https://api.mymemory.translated.net/*';
+
+class MyMemoryProvider implements TranslationProvider {
+  readonly meta = {
+    id: 'mymemory',
+    label: 'MyMemory',
+    remote: true,
+    endpointHost: 'api.mymemory.translated.net',
+    endpointOrigin: MYMEMORY_ORIGIN,
+  };
+
+  async translate(text: string, sourceLanguage?: string, targetLanguage?: string): Promise<TranslationResult> {
+    assertLength(text);
+    const source = (sourceLanguage || 'de').split('-')[0];
+    const target = (targetLanguage || 'en').split('-')[0];
+    if (source === target) {
+      throw new ProviderError('unsupported', `Subtitle and translation language are both ${target}.`);
+    }
+
+    const url = `${MYMEMORY_ENDPOINT}?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers: { Accept: 'application/json' } });
+    } catch {
+      throw new ProviderError('network', 'Could not reach MyMemory.', MYMEMORY_ORIGIN);
+    }
+    if (!response.ok) throw new ProviderError('provider', `MyMemory returned ${response.status}.`);
+
+    const payload = (await response.json().catch(() => null)) as
+      | { responseData?: { translatedText?: unknown }; responseStatus?: number; responseDetails?: string }
+      | null;
+
+    const translated = payload?.responseData?.translatedText;
+    if (typeof translated !== 'string' || !translated.trim()) {
+      throw new ProviderError('provider', payload?.responseDetails || 'MyMemory returned no translation.');
+    }
+    // The daily quota is reported in the body with a 200 status.
+    if (/MYMEMORY WARNING|QUOTA/i.test(translated)) {
+      throw new ProviderError('provider', 'MyMemory daily limit reached.');
+    }
+
+    return { text: translated, sourceLanguage: source, targetLanguage: target, providerId: this.meta.id };
+  }
+}
+
 const DEEPL_FREE = 'https://api-free.deepl.com/v2/translate';
 const LINGVA_DEFAULT = 'https://lingva.ml';
+export const LINGVA_ORIGIN = 'https://lingva.ml/*';
 
 class DeepLProvider implements TranslationProvider {
   readonly meta: TranslationProvider['meta'];
@@ -352,6 +423,27 @@ class CustomTranslationProvider implements TranslationProvider {
       providerId: this.meta.id,
     };
   }
+}
+
+/**
+ * The providers to try, in order, for the current settings.
+ *
+ * `auto` is the default and returns a chain: on-device first because it needs no network
+ * at all, then the keyless remote services. Each is tried until one answers, so a service
+ * being down, rate limited or simply lacking the language pair is a pause rather than a
+ * dead end — which is what a single fixed provider gave.
+ */
+export function createTranslationChain(settings: Settings): TranslationProvider[] {
+  if (settings.translationProvider !== 'auto') {
+    const single = createTranslationProvider(settings);
+    return single ? [single] : [];
+  }
+
+  const chain: TranslationProvider[] = [];
+  if (isOnDeviceTranslationPresent()) chain.push(new OnDeviceTranslationProvider());
+  chain.push(new MyMemoryProvider());
+  chain.push(new LingvaProvider(LINGVA_DEFAULT));
+  return chain;
 }
 
 export function createTranslationProvider(settings: Settings): TranslationProvider | null {

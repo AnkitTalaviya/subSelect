@@ -4,9 +4,10 @@ import { log } from '@shared/logger';
 import { getSettings, setSettings } from '@shared/storage';
 import type { Settings } from '@shared/settings';
 import { COMMANDS, SESSION_KEYS } from '@shared/constants';
-import { ProviderError, type ProviderOutcome } from '../providers/types';
-import { createTranslationProvider } from '../providers/translation/providers';
-import { createDictionaryProvider } from '../providers/dictionary/providers';
+import type { DictionaryProvider, TranslationProvider } from '../providers/types';
+import { runChain, type Refusal } from '../providers/chain';
+import { createTranslationChain } from '../providers/translation/providers';
+import { createDictionaryChain } from '../providers/dictionary/providers';
 import { findPronunciation, wiktionaryHostFor } from '../providers/pronunciation/providers';
 import { getVocabularyCount, saveWord } from '../vocabulary/VocabularyManager';
 
@@ -22,11 +23,18 @@ import { getVocabularyCount, saveWord } from '../vocabulary/VocabularyManager';
 
 const DYNAMIC_SCRIPT_ID = 'subselect-user-granted';
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void getSettings()
     .then((settings) => setSettings(settings))
     .catch((error: unknown) => log.error('could not seed settings', error));
   void reconcileDynamicScripts();
+
+  // The welcome screen is where the user accepts the terms and grants access to the
+  // default services in one go — it has to be an extension page, because
+  // chrome.permissions.request needs a user gesture and is unavailable to content scripts.
+  if (details.reason === 'install') {
+    void chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -131,87 +139,62 @@ chrome.tabs.onRemoved.addListener((tabId) => {
  * Two gates stand in front of every remote call — the host permission Chrome enforces, and
  * the user's own recorded agreement that this host may receive selected text (§33).
  */
-async function runProvider<T>(
-  meta: { remote: boolean; endpointHost?: string; endpointOrigin?: string; label: string },
-  settings: Settings,
-  call: () => Promise<T>,
-): Promise<ProviderOutcome<T>> {
-  if (meta.remote) {
-    const host = meta.endpointHost;
-    const origin = meta.endpointOrigin;
-    if (!host || !origin) {
-      return { ok: false, kind: 'not-configured', message: 'This provider has no usable endpoint set.' };
-    }
-    if (!settings.consentedHosts.includes(host)) {
-      return {
-        ok: false,
-        kind: 'no-permission',
-        message: `Sending text to ${host} has not been approved yet.`,
-        origin,
-      };
-    }
-    const granted = await chrome.permissions.contains({ origins: [origin] });
-    if (!granted) {
-      return {
-        ok: false,
-        kind: 'no-permission',
-        message: `SubSelect needs permission to contact ${host}.`,
-        origin,
-      };
-    }
-  }
-
-  try {
-    return { ok: true, data: await call() };
-  } catch (error) {
-    if (error instanceof ProviderError) {
-      return {
-        ok: false,
-        kind: error.kind,
-        message: error.message,
-        ...(error.origin ? { origin: error.origin } : {}),
-      };
-    }
-    log.warn(`${meta.label} failed`, error);
-    return { ok: false, kind: 'provider', message: `${meta.label} could not complete the request.` };
-  }
+interface ProviderLike {
+  meta: { remote: boolean; endpointHost?: string; endpointOrigin?: string; label: string };
 }
+
+/** Why this provider cannot be called right now, or null if it can. */
+async function gate(meta: ProviderLike['meta'], settings: Settings): Promise<Refusal | null> {
+  if (!meta.remote) return null;
+
+  if (settings.termsAcceptedAt === 0) {
+    return {
+      kind: 'no-permission',
+      message: 'Online lookups are off. Turn them on to use translation and definitions.',
+      global: true,
+    };
+  }
+  if (!meta.endpointOrigin) {
+    return { kind: 'not-configured', message: `${meta.label} has no usable endpoint set.` };
+  }
+  if (!(await chrome.permissions.contains({ origins: [meta.endpointOrigin] }))) {
+    return {
+      kind: 'no-permission',
+      message: `SubSelect does not have permission to contact ${meta.endpointHost ?? meta.label}.`,
+    };
+  }
+  return null;
+}
+
+/** Binds the permission/consent checks to a chain run. */
+const gateFor =
+  (settings: Settings) =>
+  (provider: ProviderLike) =>
+    gate(provider.meta, settings);
 
 async function translate(message: Extract<ExtensionMessage, { type: 'TRANSLATE_SELECTION' }>) {
   const settings = await getSettings();
-  const provider = createTranslationProvider(settings);
-  if (!provider) {
-    return {
-      ok: false as const,
-      kind: 'not-configured' as const,
-      message: 'No translation provider is set up yet.',
-    };
-  }
-
-  return runProvider(provider.meta, settings, () =>
-    provider.translate(
-      message.text,
-      message.sourceLanguage || settings.subtitleLanguage,
-      settings.translationLanguage,
-      message.context,
-    ),
+  return runChain(
+    createTranslationChain(settings),
+    (provider: TranslationProvider) =>
+      provider.translate(
+        message.text,
+        message.sourceLanguage || settings.subtitleLanguage,
+        settings.translationLanguage,
+        message.context,
+      ),
+    { gate: gateFor(settings), emptyMessage: 'Translation is turned off in settings.' },
   );
 }
 
 async function lookup(message: Extract<ExtensionMessage, { type: 'LOOKUP_WORD' }>) {
   const settings = await getSettings();
-  const provider = createDictionaryProvider(settings);
-  if (!provider) {
-    // §18: say so plainly rather than inventing a definition.
-    return {
-      ok: false as const,
-      kind: 'not-configured' as const,
-      message: 'No dictionary provider is set up yet.',
-    };
-  }
-
-  return runProvider(provider.meta, settings, () =>
-    provider.lookup(message.text, message.language || settings.subtitleLanguage),
+  // §18: no invented definitions — if no provider has the word, say so.
+  return runChain(
+    createDictionaryChain(settings),
+    (provider: DictionaryProvider) =>
+      provider.lookup(message.text, message.language || settings.subtitleLanguage),
+    { gate: gateFor(settings), emptyMessage: 'Dictionary lookup is turned off in settings.' },
   );
 }
 
@@ -225,10 +208,10 @@ async function pronounce(message: Extract<ExtensionMessage, { type: 'FIND_PRONUN
   const language = message.language || settings.subtitleLanguage;
   const host = wiktionaryHostFor(language);
 
-  return runProvider(
-    { remote: true, label: 'Wikimedia', endpointHost: host, endpointOrigin: `https://${host}/*` },
-    settings,
+  return runChain(
+    [{ meta: { remote: true, label: 'Wikimedia', endpointHost: host, endpointOrigin: `https://${host}/*` } }],
     () => findPronunciation(message.text, language),
+    { gate: gateFor(settings), emptyMessage: 'Recordings are turned off.' },
   );
 }
 

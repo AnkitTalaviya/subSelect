@@ -355,17 +355,34 @@ a declaration only — Phase 6.
 `fetch` there is governed by host permissions instead of the page's CORS policy; an API key
 never has to exist in a tab's process; and the page cannot observe that a lookup happened.
 
+**Provider chains, not a single provider.** `createTranslationChain` /
+`createDictionaryChain` return an ordered list, and `providers/chain.ts` tries each until
+one answers. A fixed provider made every outage a dead end — a public instance answering
+400 without a key, a daily quota, or a language pair one vendor does not carry all reached
+the user as plain failure. Each member gets `PROVIDER_TIMEOUT_MS` before the chain moves
+on, because a provider can hang rather than fail: Chrome's on-device translator may be
+fetching a language pack, and waiting on that leaves the user staring at "Translating…".
+When every member fails, the user sees what each one said, which is what makes the problem
+diagnosable. `chain.ts` holds no `chrome.*` calls, so the ordering and reporting are unit
+tested.
+
 **Two gates in front of every remote call** (§33), both required:
 
-1. the Chrome host permission for that origin, and
-2. the host appearing in `settings.consentedHosts` — the user's own recorded agreement
-   that this host may receive selected text.
+1. `settings.termsAcceptedAt > 0` — the user accepted on the welcome screen, and
+2. the Chrome host permission for that origin.
 
-They are granted together on the options page, which is the only context that can call
-`chrome.permissions.request`; a content script cannot, so the menu routes "Open settings"
-through the worker instead. The origin is derived from the configured endpoint rather than
-assumed to be `https://<host>`, because a self-hosted LibreTranslate is commonly plain
-`http` on a local port.
+One agreement up front, covering the services named on that screen, replaced a per-host
+approval prompt. Approving each service the first time it was reached for was a wall of
+interruptions before the product did anything useful, and with a chain there is no single
+host to name in advance. Chrome's permissions remain the hard gate: revoking site access
+in the browser stops everything regardless of the setting.
+
+A refusal that applies to the whole chain — lookups switched off — is marked `global` and
+reported once, rather than repeated behind every provider's name.
+
+`chrome.permissions.request` needs a user gesture on an extension page, so it lives on the
+welcome and options pages; a content script cannot call it at all, which is why the menu
+routes "Open settings" through the worker.
 
 **No undocumented endpoints.** Pointing the extension at a search engine's internal
 translate URL would give free translation with no key; it is also fragile, outside the

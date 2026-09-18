@@ -26,11 +26,16 @@ export interface Settings {
   /** Language to translate into (§24). */
   translationLanguage: LanguageCode;
 
-  /** Providers (§17, §18). `none` is the default: nothing is contacted until asked for. */
-  translationProvider: 'none' | 'chrome-ondevice' | 'libretranslate' | 'lingva' | 'deepl' | 'custom';
+  /**
+   * Providers (§17, §18).
+   *
+   * `auto` is the default and means "try the free keyless services in order". The named
+   * values pin a single provider for anyone who wants one.
+   */
+  translationProvider: 'auto' | 'none' | 'chrome-ondevice' | 'libretranslate' | 'lingva' | 'deepl' | 'custom';
   translationEndpoint: string;
   translationApiKey: string;
-  dictionaryProvider: 'none' | 'wiktionary' | 'free-dictionary' | 'custom';
+  dictionaryProvider: 'auto' | 'none' | 'wiktionary' | 'free-dictionary' | 'custom';
   dictionaryEndpoint: string;
   /**
    * Where Pronounce gets its audio.
@@ -41,12 +46,14 @@ export interface Settings {
   pronunciationProvider: 'browser' | 'wikimedia';
 
   /**
-   * Origins the user has agreed may receive selected text (§33).
+   * When the user accepted the terms, or 0 if they have not (§33).
    *
-   * A remote provider is not called until its host appears here, and the menu asks for
-   * that agreement by name the first time.
+   * One agreement up front, covering the default free services named on the welcome
+   * screen, instead of an approval prompt per host the first time each is reached. No
+   * remote provider runs while this is 0; Chrome's own host permissions remain the second
+   * gate, so revoking access in the browser still stops everything.
    */
-  consentedHosts: string[];
+  termsAcceptedAt: number;
 
   /** Vocabulary (§19, §49). */
   saveContext: boolean;
@@ -80,13 +87,13 @@ export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   subtitleLanguage: 'de',
   translationLanguage: 'en',
-  translationProvider: 'none',
+  translationProvider: 'auto',
   translationEndpoint: '',
   translationApiKey: '',
-  dictionaryProvider: 'none',
+  dictionaryProvider: 'auto',
   dictionaryEndpoint: '',
-  pronunciationProvider: 'browser',
-  consentedHosts: [],
+  pronunciationProvider: 'wikimedia',
+  termsAcceptedAt: 0,
   saveContext: true,
   clickToSelect: true,
   dragToSelect: true,
@@ -104,8 +111,8 @@ export const DEFAULT_SETTINGS: Settings = {
 const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
   contextMenuPlacement: ['auto', 'above', 'below'],
   theme: ['system', 'light', 'dark'],
-  translationProvider: ['none', 'chrome-ondevice', 'libretranslate', 'lingva', 'deepl', 'custom'],
-  dictionaryProvider: ['none', 'wiktionary', 'free-dictionary', 'custom'],
+  translationProvider: ['auto', 'none', 'chrome-ondevice', 'libretranslate', 'lingva', 'deepl', 'custom'],
+  dictionaryProvider: ['auto', 'none', 'wiktionary', 'free-dictionary', 'custom'],
   pronunciationProvider: ['browser', 'wikimedia'],
 };
 

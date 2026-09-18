@@ -34,8 +34,24 @@ with, any video zoom, stretch, crop or aspect-ratio extension.
 
 ### Providers
 
-Nothing is contacted until you set a provider up in Settings, and remote providers must be
-approved by name before a single request is made.
+It works out of the box. On first install a welcome page names every service SubSelect can
+contact and asks once; accept and translation, definitions and recordings are ready with
+no keys, no accounts and no per-source setup. Decline and everything except lookups still
+works, with no network access at all.
+
+**Providers are tried in a chain, not fixed.** Whichever answers first is used, so a
+service that is rate limited, down, or simply missing a word or language pair is a pause
+rather than a dead end. Each answer is labelled with where it came from, and if every
+provider fails you see what each one said.
+
+| | Order tried |
+| --- | --- |
+| Translation | on-device (if the browser has it) → MyMemory → Lingva |
+| Definitions | Wiktionary → Free Dictionary API |
+| Pronunciation | Wikimedia recording → speech synthesis |
+
+Any single provider can still be pinned in Settings, including LibreTranslate or DeepL
+with your own key.
 
 | Translation | Licence | Needs | Sends text off device |
 | --- | --- | --- | --- |
@@ -203,15 +219,16 @@ It does not, and will not:
 * read your browsing history or track what you watch;
 * send subtitle text anywhere on its own.
 
-With no provider configured — the default — SubSelect makes **no network requests at
-all**, and everything except Translate and Definition still works.
+Two gates stand in front of every request and both must be open: your acceptance on the
+welcome screen, and the Chrome host permission granted with it. Revoking the site access
+in Chrome stops everything regardless of the setting, and one switch in Settings turns
+lookups off again.
 
-When you do configure one, two gates stand in front of every request, and both must be
-open: the Chrome host permission, and your recorded approval that *this host* may receive
-selected text. The options page grants them together, naming the host. After that, the
-selected text and its subtitle line are sent to that provider **only** when you press
-Translate or Definition — never in the background, never on a timer, never for text you
-did not select. Every answer is labelled with the provider it came from.
+Once on, the selected text and its subtitle line are sent to a provider **only** when you
+press Translate, Definition or Pronounce — never in the background, never on a timer,
+never for text you did not select. Every answer is labelled with where it came from.
+
+Declining is a first-class option: selection, copy and save need no network whatsoever.
 
 API keys are stored in this browser's local storage and sent only to the endpoint you
 entered them for. They never leave with an export.

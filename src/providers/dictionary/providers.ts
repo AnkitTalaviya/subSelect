@@ -84,15 +84,22 @@ class WiktionaryProvider implements DictionaryProvider {
       throw new ProviderError('provider', 'Wiktionary returned an unreadable response.');
     }
 
-    // The response is keyed by language code; fall back to whatever it does have rather
-    // than reporting nothing when the language hint is missing or unexpected.
-    const wantedName = language ? WIKTIONARY_LANGUAGE_NAMES[language.split('-')[0] ?? ''] : undefined;
-    const entries = (language && payload[language.split('-')[0] ?? '']) ||
-      Object.values(payload).flat();
+    /*
+     * The response is keyed by language code. Prefer the requested language, but never
+     * return nothing just because that key is absent: an entry under another key is far
+     * more useful than "no entry", and the language hint is a guess often enough that
+     * insisting on it produced misses for perfectly ordinary words.
+     */
+    const code = language ? (language.split('-')[0] ?? '') : '';
+    const preferred = code ? (payload[code] ?? []) : [];
+    const entries = preferred.length > 0 ? preferred : Object.values(payload).flat();
+    const wantedName = code ? WIKTIONARY_LANGUAGE_NAMES[code] : undefined;
+    // Only filter by language name when that is what we actually matched on.
+    const filterByName = preferred.length > 0 ? wantedName : undefined;
 
     const senses: DictionarySense[] = [];
     for (const entry of entries) {
-      if (wantedName && entry.language && entry.language !== wantedName) continue;
+      if (filterByName && entry.language && entry.language !== filterByName) continue;
 
       for (const definition of entry.definitions ?? []) {
         const text = stripHtml(definition.definition ?? '');
@@ -248,6 +255,23 @@ class CustomDictionaryProvider implements DictionaryProvider {
 
     return { headword: text, senses: senses.slice(0, 6), providerId: this.meta.id };
   }
+}
+
+/**
+ * Dictionary providers to try, in order.
+ *
+ * Wiktionary first — it has by far the best coverage of German, and its entries for a word
+ * in one language are written in the language of the edition, so `en.wiktionary.org` gives
+ * English glosses for German words, which is what a learner wants. The Free Dictionary API
+ * follows for the languages it covers. Still no invented definitions anywhere (§18): if
+ * none of them has the word, the UI says so.
+ */
+export function createDictionaryChain(settings: Settings): DictionaryProvider[] {
+  if (settings.dictionaryProvider !== 'auto') {
+    const single = createDictionaryProvider(settings);
+    return single ? [single] : [];
+  }
+  return [new WiktionaryProvider(), new FreeDictionaryProvider()];
 }
 
 export function createDictionaryProvider(settings: Settings): DictionaryProvider | null {
