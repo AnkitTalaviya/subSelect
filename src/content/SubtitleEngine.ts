@@ -71,10 +71,24 @@ export class SubtitleEngine {
     this.urlWatcher = new UrlWatcher(() => this.onNavigate());
     this.urlWatcher.start();
 
-    // Nothing needs to be tracked while the tab is in the background.
+    /*
+     * Switching tabs must not cost anything.
+     *
+     * The binding used to be torn down whenever the tab was hidden, to save work in the
+     * background. Coming back could not undo it: the detector still held the same video,
+     * so re-evaluating decided nothing had changed and never notified, and the engine sat
+     * unbound until the video itself was replaced. Tearing down also resumed a video that
+     * had been paused to read a word, so a quick look at another tab restarted playback.
+     *
+     * Nothing is released now. A hidden tab's player is usually paused, so the observers
+     * sit idle anyway, and the health check below already stands down while hidden. On the
+     * way back the position is re-measured, because the window may have been resized.
+     */
     this.disposer.listen(document, 'visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.releaseBinding();
-      else this.detector?.refresh();
+      if (document.visibilityState === 'hidden') return;
+      this.ensureBound();
+      this.binding?.tracker.refresh();
+      this.detector?.refresh();
     });
 
     this.disposer.listen(document, 'fullscreenchange', () => this.onFullscreenChange());
@@ -270,12 +284,11 @@ export class SubtitleEngine {
   private checkHealth(): void {
     if (!this.running || document.visibilityState === 'hidden') return;
 
-    const binding = this.binding;
-    if (!binding) {
-      // Unbound: make sure something is still looking for a player.
-      this.detector?.refresh();
+    if (!this.binding) {
+      this.ensureBound();
       return;
     }
+    const binding = this.binding;
 
     const presentation = binding.presentation;
     const detached =
@@ -342,6 +355,25 @@ export class SubtitleEngine {
     }
 
     this.bind(video);
+  }
+
+  /**
+   * Binds to the detector's current video if nothing is bound.
+   *
+   * Every recovery path used to go through `detector.refresh()`, which re-evaluates and
+   * notifies only when the *best video changes*. After a binding was dropped with the
+   * video still in place — a hidden tab, a burst of errors — the detector saw the same
+   * element it already held, decided nothing had changed, and said nothing. The engine
+   * sat unbound with a perfectly good video in front of it. This asks the detector what it
+   * has and binds to it directly, falling back to a fresh search only when that video is
+   * gone.
+   */
+  private ensureBound(): void {
+    if (!this.running || this.binding) return;
+
+    const video = this.detector?.getCurrent();
+    if (video?.isConnected) this.bind(video);
+    else this.detector?.refresh();
   }
 
   private bind(video: HTMLVideoElement): void {
@@ -568,7 +600,9 @@ export class SubtitleEngine {
           this.recoveryTimer = null;
           if (!this.running) return;
           this.errorCount = 0;
-          this.detector?.refresh();
+          // Not refresh(): the video that failed is usually still the current one, and a
+          // refresh would look at it, see no change, and say nothing.
+          this.ensureBound();
         }, TIMING.errorRecoveryMs);
       }
       return;

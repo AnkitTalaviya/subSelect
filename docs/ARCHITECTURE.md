@@ -288,6 +288,8 @@ bound to nodes that no longer existed:
 1. **Repeated failures were terminal.** `fail()` stopped the detector and never restarted
    it, so a burst of errors during a player transition killed the feature for the life of
    the page. It now backs off and retries after `TIMING.errorRecoveryMs`.
+1. **Switching tabs was terminal.** The binding was torn down whenever the tab went
+   hidden, and nothing rebuilt it: see `ensureBound` below.
 2. **A replaced `<video>` ended the search.** `requestRebind` gave up when the element it
    was asked to rebind had been detached — which is exactly what a player swapping videos
    between titles does. It now hands the search back to the detector.
@@ -300,10 +302,28 @@ of `isConnected` reads — the video, the player root, our layer, and the elemen
 mirrored — not a scan, and it stops while the tab is hidden. Anything detached means a
 clean re-bind, or handing back to the detector when the video itself is gone.
 
-> Worth knowing when testing: a content script's timers live in the same window timer table
-> as the page's. A page calling `clearInterval` over a range of ids cancels the extension's
-> timers too. The browser harness used to do exactly that to freeze its caption carousel,
-> and silently disabled the health check it was meant to be verifying.
+**`ensureBound` vs `detector.refresh()`.** The detector notifies only when the *best video
+changes*. Every recovery path used to call `refresh()`, which is silent whenever the video
+is unchanged — precisely the case after a binding is dropped with the player still sitting
+there. `ensureBound` asks the detector what it currently holds and binds to it directly,
+falling back to a search only when that video is gone. Recovery paths call it; `refresh()`
+is for "the page may now have a different video".
+
+Nothing is released when the tab is hidden any more. A hidden tab's player is normally
+paused, so the observers idle; the health check already stands down; and tearing down used
+to resume a video that had been paused to read a word, so glancing at another tab restarted
+playback.
+
+> Two things worth knowing when testing:
+>
+> - A content script's timers live in the same window timer table as the page's. A page
+>   calling `clearInterval` over a range of ids cancels the extension's timers too. The
+>   harness used to do exactly that to freeze its caption carousel, and silently disabled
+>   the health check it was meant to be verifying.
+> - Headless Chromium reports every page as `visible` however targets are activated, so the
+>   tab-switch case cannot be tested there at all. `SUBSELECT_HEADFUL=1` runs it in a real
+>   window. In that mode Chrome's occlusion detection can legitimately mark the window
+>   hidden, which pauses the health check — so the rest of the suite stays headless.
 
 ### Pausing to read (§43)
 

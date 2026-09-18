@@ -83,7 +83,9 @@ const browser = spawn(
     '--autoplay-policy=no-user-gesture-required',
     '--window-size=1280,900',
     '--mute-audio',
-    '--headless=new',
+    // Headless reports every page as visible however targets are activated, so the
+    // tab-switch check needs a real window: SUBSELECT_HEADFUL=1.
+    ...(process.env.SUBSELECT_HEADFUL ? [] : ['--headless=new']),
     'about:blank',
   ],
   { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -658,6 +660,64 @@ try {
         host.replaceWith(fresh);
         return 1})()`),
     );
+
+    /*
+     * 2b. The user switches to another tab and comes back.
+     *
+     * A real second tab is opened and brought to the front, so this page's
+     * visibilityState genuinely becomes "hidden" — not a faked event. Coming back must
+     * leave the feature working; it used to be torn down on hide and never rebuilt, since
+     * the detector saw the same video on return and stayed silent.
+     */
+    if (!process.env.SUBSELECT_HEADFUL) {
+      console.log('   (tab-switch check needs a real window: SUBSELECT_HEADFUL=1)');
+    } else {
+      const before = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+      // /json/new must be a PUT in current Chromium; a GET is rejected.
+      const other = await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (other) {
+        await fetch(`http://127.0.0.1:9222/json/activate/${other.id}`);
+        await sleep(1200);
+        const hidden = await cdp.eval('document.visibilityState');
+        await fetch(`http://127.0.0.1:9222/json/activate/${page.id}`);
+        await sleep(1200);
+        await fetch(`http://127.0.0.1:9222/json/close/${other.id}`).catch(() => {});
+        check('page actually went hidden during the tab switch', hidden === 'hidden', hidden);
+
+        // Interaction must work after returning, not merely the overlay be present.
+        await sleep(600);
+        const back = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+        check('still working after switching tabs and back', back > 0 && back === before,
+          `${before} words before, ${back} after`);
+
+        const spot = JSON.parse(
+          await cdp.eval(`(()=>{const w=document.querySelectorAll('.subselect-word');
+            if(!w.length) return JSON.stringify({found:false});
+            const r=w[0].getBoundingClientRect();
+            return JSON.stringify({found:true,x:r.x+r.width/2,y:r.y+r.height/2})})()`),
+        );
+        if (spot.found) {
+          for (const type of ['mousePressed', 'mouseReleased']) {
+            await cdp.send('Input.dispatchMouseEvent', {
+              type, x: spot.x, y: spot.y, button: 'left', clickCount: 1,
+              buttons: type === 'mousePressed' ? 1 : 0,
+            });
+            await sleep(60);
+          }
+          await sleep(500);
+          const sel = await cdp.eval(
+            'document.querySelectorAll(\'.subselect-word[data-ss-selected="true"]\').length',
+          );
+          check('a word is selectable after returning to the tab', sel === 1, `${sel} highlighted`);
+          await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+          await sleep(400);
+        }
+      } else {
+        console.log('   (could not open a second tab; tab-switch check skipped)');
+      }
+    }
 
     // 3. The whole player subtree is rebuilt, video element included — a Prime Video
     //    transition between titles looks like this from the outside.

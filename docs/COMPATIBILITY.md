@@ -55,6 +55,11 @@ It uses **Edge**, not Chrome: branded Chrome stable refuses to side-load an unpa
 extension. Point `SUBSELECT_BROWSER` at any other Chromium to override. A screenshot lands
 at `verify.png` — look at it, an assertion passing on a blank frame proves nothing.
 
+`SUBSELECT_HEADFUL=1` runs in a real window, which is the only way to test the tab-switch
+case: headless reports every page as visible however targets are activated. Keep the rest
+of the suite headless — in a real window Chrome's occlusion detection can mark the window
+hidden, which correctly pauses the health check and makes the recovery checks flaky.
+
 ## How to test a site
 
 1. Load the unpacked build (`README.md` → Install).

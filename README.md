@@ -286,10 +286,13 @@ not look for one. See [`docs/FEASIBILITY.md` §9](docs/FEASIBILITY.md#9-hard-bou
 
 ## Staying on
 
-Turning SubSelect on is meant to be the last thing you do. It re-attaches by itself when a
-player changes episode, seeks, rebuilds its DOM, replaces its video element, or removes the
-overlay during a re-render — and after a burst of its own errors. No reloading, no toggling
-it off and on.
+Turning SubSelect on is meant to be the last thing you do. It keeps working across tab
+switches, and re-attaches by itself when a player changes episode, seeks, rebuilds its DOM,
+replaces its video element, or removes the overlay during a re-render — and after a burst of
+its own errors. No reloading, no toggling it off and on.
+
+Switching tabs costs nothing: nothing is torn down, so a video paused to read a word is
+still paused when you come back, with the word still selected.
 
 ## Safety
 
