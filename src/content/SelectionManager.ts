@@ -302,7 +302,10 @@ export class SelectionManager {
     // undo — but only if the press turns out to be a click. Deciding that here would
     // break dragging outwards from a word that is already selected, so the toggle is
     // resolved at pointerup instead.
-    const toggleOff = this.current?.words.length === 1 && this.current.words[0]?.id === wordId;
+    const toggleOff =
+      this.settings.clickToSelect &&
+      this.current?.words.length === 1 &&
+      this.current.words[0]?.id === wordId;
 
     const target = this.renderer.elementFor(wordId);
     if (target) {
@@ -327,9 +330,17 @@ export class SelectionManager {
       cueId: cue.id,
     };
 
-    // Select immediately so a plain click feels instantaneous rather than waiting for
-    // the pointer to come back up.
-    this.selectWords([word]);
+    /*
+     * Select immediately so a plain click feels instantaneous rather than waiting for the
+     * pointer to come back up — but only when click-to-select is actually on.
+     *
+     * The guard at the top of this method only returns when click *and* drag are both off,
+     * which is right for setting up a drag but wrong here: with click-to-select off and
+     * drag on (the default), the press still landed here and selected the word, so the
+     * switch did nothing whatsoever. A press with it off must set the drag up and select
+     * nothing until the pointer moves.
+     */
+    if (this.settings.clickToSelect) this.selectWords([word]);
   }
 
   private onPointerMove(event: PointerEvent): void {

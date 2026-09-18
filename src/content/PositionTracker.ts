@@ -115,6 +115,28 @@ export class PositionTracker {
     return { x: 0, y: 0, fixed: true };
   }
 
+  /**
+   * Accumulated CSS `zoom` on the ancestors the layer sits under, or 1.
+   *
+   * Browser zoom needs nothing — it scales CSS pixels uniformly, so measuring and setting
+   * both happen in the same units and the overlay lands exactly. CSS `zoom` does not:
+   * `getBoundingClientRect()` reports zoomed pixels, while a `left` or `width` we set is
+   * interpreted *inside* the zoomed context and rendered `zoom` times larger. A distance
+   * taken from two rects therefore has to come back down before it is written out.
+   */
+  private ancestorZoom(): number {
+    let zoom = 1;
+    for (
+      let node: HTMLElement | null = this.layer.parentElement;
+      node;
+      node = node.parentElement
+    ) {
+      const value = parseFloat(getComputedStyle(node).zoom || '1');
+      if (Number.isFinite(value) && value > 0) zoom *= value;
+    }
+    return zoom > 0 ? zoom : 1;
+  }
+
   private measure(): SubtitleBox | null {
     const videoRect = this.video.getBoundingClientRect();
     if (videoRect.width < 1 || videoRect.height < 1) return null;
@@ -122,9 +144,23 @@ export class PositionTracker {
     const origin = this.resolveOrigin();
     this.fixed = origin.fixed;
 
-    return this.presentation.mode === 'mirror'
-      ? this.measureMirror(origin)
-      : this.measureDerived(videoRect, origin);
+    const box =
+      this.presentation.mode === 'mirror'
+        ? this.measureMirror(origin)
+        : this.measureDerived(videoRect, origin);
+    if (!box) return null;
+
+    // Guarded so the ordinary, unzoomed page takes exactly the path it always did.
+    const zoom = this.ancestorZoom();
+    if (zoom === 1) return box;
+
+    return {
+      ...box,
+      x: box.x / zoom,
+      y: box.y / zoom,
+      width: box.width / zoom,
+      height: box.height / zoom,
+    };
   }
 
   private measureMirror(origin: { x: number; y: number; fixed: boolean }): SubtitleBox | null {

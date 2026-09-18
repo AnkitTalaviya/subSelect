@@ -1030,6 +1030,90 @@ try {
       }
       check('follows the captions when they move to another element',
         /völlig anderes/.test(followed), followed ? followed.slice(0, 40) : 'overlay stayed empty');
+
+      /*
+       * "Click to select a word" has to actually do something when switched off.
+       *
+       * It used to not: the pointer handler only bailed when click *and* drag were both
+       * off, so with drag on — the default — a press selected the word anyway and the
+       * switch was inert. Drag must keep working with it off, which is the whole reason
+       * the two are separate settings.
+       */
+      const wordAt = (i) =>
+        cdp.eval(`(()=>{const w=document.querySelectorAll('.subselect-word')[${i}];
+          if(!w) return null; const r=w.getBoundingClientRect();
+          return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()`);
+      const highlighted = () =>
+        cdp.eval(`document.querySelectorAll('[data-ss-selected="true"]').length`);
+      const setSetting = async (patch) => {
+        const sw3 = (await devtools('/json/list')).find(
+          (t) => t.type === 'service_worker' && t.url.includes('service-worker.js'),
+        );
+        const c = new CDP(sw3.webSocketDebuggerUrl);
+        await c.ready;
+        await c.send('Runtime.enable');
+        await c.eval(`chrome.storage.local.get('settings').then(s=>chrome.storage.local.set({
+          settings:{...s.settings, ...${JSON.stringify(patch)}}})).then(()=>'ok')`);
+        c.ws.close();
+        await sleep(900);
+      };
+
+      await cdp.eval(`window.__say('Ich möchte morgen nach Berlin fahren.'); 1`);
+      await sleep(900);
+      await setSetting({ clickToSelect: false });
+
+      const one = JSON.parse((await wordAt(1)) ?? 'null');
+      if (one) {
+        for (const type of ['mousePressed', 'mouseReleased']) {
+          await cdp.send('Input.dispatchMouseEvent', { type, x: one.x, y: one.y, button: 'left',
+            clickCount: 1, buttons: type === 'mousePressed' ? 1 : 0 });
+          await sleep(60);
+        }
+        await sleep(500);
+        check('click-to-select off actually stops a click selecting',
+          (await highlighted()) === 0, `${await highlighted()} highlighted`);
+
+        // …while dragging still works, which is the point of the two being separate.
+        const three = JSON.parse((await wordAt(3)) ?? 'null');
+        if (three) {
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: one.x, y: one.y,
+            button: 'left', clickCount: 1, buttons: 1 });
+          for (let i = 1; i <= 6; i++) {
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1,
+              x: one.x + ((three.x - one.x) * i) / 6, y: one.y + ((three.y - one.y) * i) / 6 });
+            await sleep(40);
+          }
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: three.x, y: three.y,
+            button: 'left', buttons: 0 });
+          await sleep(600);
+          check('drag still selects while click-to-select is off', (await highlighted()) >= 2,
+            `${await highlighted()} highlighted`);
+        }
+      }
+      await setSetting({ clickToSelect: true });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await sleep(400);
+
+      /*
+       * CSS `zoom` on an ancestor. Browser zoom needs nothing — it scales CSS pixels
+       * uniformly — but under CSS zoom the rects are measured in zoomed pixels while the
+       * lengths we write are interpreted inside the zoomed context, so the overlay landed
+       * short of the caption it is supposed to sit exactly on top of.
+       */
+      await cdp.eval(`document.body.style.zoom='2'; 1`);
+      await sleep(1600);
+      const zoomed = JSON.parse(
+        await cdp.eval(`(()=>{const o=document.querySelector('[data-subselect-hidden="true"]');
+          const l=document.querySelector('.subselect-layer');
+          if(!o||!l) return JSON.stringify({ok:false});
+          const A=o.getBoundingClientRect(), B=l.getBoundingClientRect();
+          return JSON.stringify({ok:true,dx:Math.round(B.x-A.x),dy:Math.round(B.y-A.y)})})()`),
+      );
+      check('overlay stays on the caption under CSS zoom',
+        zoomed.ok && Math.abs(zoomed.dx) <= 2 && Math.abs(zoomed.dy) <= 2,
+        zoomed.ok ? `dx=${zoomed.dx} dy=${zoomed.dy}` : 'overlay or caption missing');
+      await cdp.eval(`document.body.style.zoom=''; 1`);
+      await sleep(900);
     }
   }
 
