@@ -10,7 +10,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-const OUT_DIR = resolve(dirname(dirname(fileURLToPath(import.meta.url))), 'public/icons');
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const OUT_DIR = resolve(ROOT, 'public/icons');
+const STORE_DIR = resolve(ROOT, 'store');
 const SIZES = [16, 32, 48, 128];
 const SS = 4; // supersampling factor
 
@@ -80,10 +82,16 @@ function inRoundedRect(px, py, x, y, w, h, r) {
   return dx * dx + dy * dy <= r * r;
 }
 
-function renderIcon(size) {
+/**
+ * `pad` insets the whole mark by that many design units on every side. The toolbar icons
+ * want the full frame; the Chrome Web Store listing icon is specified as a 96x96 mark
+ * centred on a 128x128 canvas, which is `pad: 16`.
+ */
+function renderIcon(size, { pad = 0 } = {}) {
   const big = size * SS;
   const hi = new Uint8Array(big * big * 4);
   const u = big / 128; // design units: everything below is authored at 128px
+  const scale = (128 - 2 * pad) / 128;
 
   /** Shapes are painted back to front; last writer wins. */
   const shapes = [
@@ -101,7 +109,10 @@ function renderIcon(size) {
     for (let x = 0; x < big; x++) {
       let painted = null;
       for (const s of shapes) {
-        if (inRoundedRect(x, y, s.x * u, s.y * u, s.w * u, s.h * u, s.r * u)) painted = s.color;
+        const inset = (v) => (pad + v * scale) * u;
+        if (inRoundedRect(x, y, inset(s.x), inset(s.y), s.w * scale * u, s.h * scale * u, s.r * scale * u)) {
+          painted = s.color;
+        }
       }
       const i = (y * big + x) * 4;
       if (painted) {
@@ -143,4 +154,9 @@ mkdirSync(OUT_DIR, { recursive: true });
 for (const size of SIZES) {
   writeFileSync(resolve(OUT_DIR, `icon-${size}.png`), encodePng(size, renderIcon(size)));
 }
-console.log(`SubSelect: wrote ${SIZES.length} icons to public/icons/`);
+
+// The listing icon is a separate asset: same mark, the store's padding.
+mkdirSync(STORE_DIR, { recursive: true });
+writeFileSync(resolve(STORE_DIR, 'store-icon-128.png'), encodePng(128, renderIcon(128, { pad: 16 })));
+
+console.log(`SubSelect: wrote ${SIZES.length} icons to public/icons/ and the store icon to store/`);
