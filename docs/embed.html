@@ -1,0 +1,102 @@
+<div id="ss">
+<style>
+#ss{--p:#161822;--f:#f3f5fb;--m:#9aa2b8;--q:#6e7689;--l:rgba(255,255,255,.1);--a:#8fa6ff;--h:rgba(108,140,255,.55);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--f);max-width:900px;margin:0 auto;padding:0 12px}
+#ss *{box-sizing:border-box}
+#ss .scr{position:relative;border-radius:14px;overflow:hidden;min-height:300px;display:flex;flex-direction:column;justify-content:flex-end;padding:18px 14px 22px;background:radial-gradient(120% 100% at 18% 12%,#2a3350 0,transparent 58%),radial-gradient(90% 90% at 88% 88%,#1f3a34 0,transparent 55%),#14161d;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+#ss .top{position:absolute;top:13px;left:15px;display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.34)}
+#ss .top i{width:7px;height:7px;border-radius:50%;background:#4fd18b}
+#ss .cap{font-size:clamp(1.05rem,3vw,1.6rem);font-weight:500;line-height:1.45;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);text-align:center;margin:0 auto;max-width:22ch;display:flex;flex-wrap:wrap;justify-content:center;gap:0 .28em}
+#ss .cap button{font:inherit;color:inherit;background:none;border:0;margin:0;padding:0 .06em;border-radius:3px;cursor:pointer;text-shadow:inherit}
+#ss .cap button:hover{background:rgba(255,255,255,.17)}
+#ss .cap button[aria-pressed=true]{background:var(--h);box-shadow:0 0 0 1.5px rgba(255,255,255,.9)}
+#ss .hint{text-align:center;font-size:11px;letter-spacing:.05em;color:rgba(255,255,255,.4);margin:14px 0 0}
+#ss .pan{position:absolute;top:42px;right:16px;z-index:3;width:min(310px,calc(100% - 32px));background:var(--p);border:1px solid var(--l);border-radius:14px;font-size:13px;line-height:1.45;overflow:hidden;text-align:left;box-shadow:0 10px 34px rgba(0,0,0,.5)}
+#ss .hd{padding:10px 13px 8px;border-bottom:1px solid var(--l)}
+#ss .tm{font-size:14.5px;font-weight:650;margin:0}
+#ss .cx{font-size:11px;color:var(--q);margin:2px 0 0}
+#ss .bd{padding:10px 13px 11px;display:flex;flex-direction:column;gap:8px}
+#ss .ar{display:inline-flex;gap:6px;font-size:15px;font-weight:600;margin:0}
+#ss .ar b{color:#6f9dff}
+#ss .gr{font-size:11.5px;color:var(--m);margin:0}
+#ss .tr{font-size:15px;font-weight:550;margin:0}
+#ss dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:0;font-size:12px}
+#ss dt{color:var(--q)}
+#ss dd{margin:0}
+#ss ol{margin:0;padding-left:16px;font-size:12px;display:flex;flex-direction:column;gap:4px}
+#ss .ps{color:var(--q);margin-right:5px}
+#ss .via{font-size:10.5px;color:var(--q);margin:0}
+#ss .acts{display:flex;gap:4px;padding:6px;border-top:1px solid var(--l)}
+#ss .act{display:flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;background:none;color:var(--m);font:inherit;font-size:12.5px;font-weight:550;padding:7px 0;width:32px;flex:none;cursor:pointer}
+#ss .act:hover{background:rgba(255,255,255,.08);color:var(--f)}
+#ss .act.p{flex:1 1 auto;width:auto;padding:7px 9px;background:rgba(255,255,255,.045);color:var(--f);font-weight:600}
+#ss .act svg{width:15px;height:15px;flex:none}
+#ss .act.p svg{color:var(--a)}
+#ss .tst{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);background:rgba(0,0,0,.82);color:#fff;font-size:11px;padding:6px 12px;border-radius:999px;z-index:5;margin:0}
+#ss .cta{display:flex;flex-wrap:wrap;gap:6px 16px;margin:12px 2px 0;font-size:13px;color:var(--m)}
+#ss .cta b{color:var(--f)}
+#ss .cta a{color:var(--a)}
+#ss :focus-visible{outline:2px solid var(--a);outline-offset:2px}
+@media(max-width:700px){#ss .pan{position:static;margin:0 auto 16px;width:100%}#ss .scr{justify-content:flex-start;padding-top:42px}}
+</style>
+<div class="scr" id="ssS">
+<p class="top"><i></i>Interactive subtitles · active</p>
+<div class="pan" id="ssP" role="region" aria-live="polite" aria-label="Word panel"></div>
+<p class="cap" id="ssC"></p>
+<p class="hint">Click any word. Click it again to clear.</p>
+</div>
+<p class="cta"><b>SubSelect</b> — click a word in any video's subtitles and keep watching. <a href="https://github.com/AnkitTalaviya/subSelect" target="_blank" rel="noopener">Source on GitHub →</a></p>
+<script>
+(function(){
+var X="Ich habe mich gestern für einen neuen Job entschieden.",G=1;
+var W=[
+["Ich",{g:"I",m:"pronoun · nominative"}],
+["habe",{g:"have",m:"verb · 1st person singular present",f:[["Infinitiv","haben"],["Präteritum","hatte"],["Partizip II","gehabt"],["Hilfsverb","haben"]],v:G}],
+["mich",{g:"me, myself",m:"pronoun · accusative of ich",s:[["pronoun","reflexive here: sich entscheiden, to make up one's mind"]]}],
+["gestern",{g:"yesterday",m:"adverb · [ˈɡɛstɐn]",s:[["adverb","on the day before today"]]}],
+["für",{g:"for",m:"preposition · takes the accusative"}],
+["einen",{g:"a, an",m:"article · accusative masculine of ein",v:G}],
+["neuen",{g:"new",m:"adjective · inflected form of neu",n:"Dictionary form: neu",v:G}],
+["Job",{a:"der",g:"job",m:"masculine noun · Plural: die Jobs · [dʒɔp]",s:[["noun","paid work; a post or position","Er sucht einen neuen Job."]],v:G}],
+["entschieden.",{t:"entschieden",g:"decided — Partizip II of entscheiden",m:"verb · [ɛntˈʃiːdn̩]",f:[["Infinitiv","entscheiden"],["Präsens","entscheidet"],["Präteritum","entschied"],["Partizip II","entschieden"],["Konjunktiv II","entschiede"],["Hilfsverb","haben"]],s:[["verb","to decide, to make a decision"],["verb","reflexive, sich entscheiden für: to settle on"]],v:G}]];
+var I={t:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+k:'<path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z"/><path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9z"/>',
+r:'<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>',
+a:'<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>',
+c:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>'};
+var C=document.getElementById("ssC"),P=document.getElementById("ssP"),S=document.getElementById("ssS"),sel=null,nsv=0,tt;
+var sv=function(n){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+I[n]+'</svg>'};
+var e=function(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var toast=function(t){var o=S.querySelector(".tst");if(o)o.remove();
+var p=document.createElement("p");p.className="tst";p.textContent=t;S.appendChild(p);
+clearTimeout(tt);tt=setTimeout(function(){p.remove()},2200)};
+function draw(i){
+var d=W[i][1],T=d.t||W[i][0],h='<div class="hd"><p class="tm">'+e(T)+'</p><p class="cx">'+e(X)+'</p></div><div class="bd">';
+if(d.a)h+='<p class="ar"><b>'+e(d.a)+'</b>'+e(T)+'</p>';
+h+='<p class="gr">'+e(d.m)+'</p><p class="tr">'+e(d.g)+'</p>';
+if(d.n)h+='<p class="gr">'+e(d.n)+'</p>';
+if(d.f){h+="<dl>";d.f.forEach(function(f){h+="<dt>"+e(f[0])+"</dt><dd>"+e(f[1])+"</dd>"});h+="</dl>"}
+if(d.s){h+="<ol>";d.s.forEach(function(s){h+='<li><span class="ps">'+e(s[0])+"</span>"+e(s[1])+(s[2]?"<br><em>"+e(s[2])+"</em>":"")+"</li>"});h+="</ol>"}
+h+='<p class="via">via wiktionary'+(d.v?", wiktionary-grammar":"")+'</p></div><div class="acts">'+
+'<button class="act p" type="button" data-a="t">'+sv("t")+'<span>Translate</span></button>'+
+'<button class="act" type="button" data-a="k" title="Ask AI" aria-label="Ask AI">'+sv("k")+'</button>'+
+'<button class="act" type="button" data-a="r" title="Pronounce" aria-label="Pronounce">'+sv("r")+'</button>'+
+'<button class="act" type="button" data-a="s" title="Save" aria-label="Save">'+sv("a")+'</button>'+
+'<button class="act" type="button" data-a="c" title="Copy" aria-label="Copy">'+sv("c")+'</button></div>';
+P.innerHTML=h;P.hidden=false;
+[].forEach.call(P.querySelectorAll(".act"),function(b){b.addEventListener("click",function(){
+var a=b.getAttribute("data-a");
+if(a=="r"){try{var u=new SpeechSynthesisUtterance(T);u.lang="de-DE";speechSynthesis.cancel();speechSynthesis.speak(u);toast("Speaking…")}catch(x){toast("No speech synthesis here")}return}
+if(a=="s"){nsv++;toast("Saved · "+nsv+(nsv==1?" word":" words"));return}
+if(a=="c"){try{navigator.clipboard.writeText(T).then(function(){toast("Copied ✓")},function(){toast("Could not copy — the page blocked clipboard access.")})}catch(x){toast("Could not copy — the page blocked clipboard access.")}return}
+if(a=="k"){toast("Goes to the assistant you have open");return}
+toast("Looked up · "+T)})})}
+function pick(i){var b=C.querySelectorAll("button");
+if(sel===i){b[i].setAttribute("aria-pressed","false");sel=null;P.hidden=true;P.innerHTML="";return}
+[].forEach.call(b,function(x,j){x.setAttribute("aria-pressed",j===i?"true":"false")});
+sel=i;draw(i)}
+W.forEach(function(w,i){var b=document.createElement("button");b.type="button";b.textContent=w[0];
+b.setAttribute("aria-pressed","false");b.addEventListener("click",function(){pick(i)});C.appendChild(b)});
+pick(W.length-1);
+})();
+</script>
+</div>
