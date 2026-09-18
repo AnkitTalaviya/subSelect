@@ -279,7 +279,7 @@ export class SubtitleEngine {
       const menu = new ContextMenu(context.playerRoot, this.settings, {
         // The menu acts on the selection it was opened with, which may have outlived the
         // caption it came from.
-        onCopy: (text) => void selection.copyText(text),
+        onCopy: (text) => selection.copyText(text),
         onDismiss: () => {
           selection.clear('user');
           menu.hide();

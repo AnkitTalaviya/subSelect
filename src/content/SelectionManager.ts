@@ -182,12 +182,17 @@ export class SelectionManager {
     this.onSelection(null, reason);
   }
 
-  /** Copies arbitrary text, for the menu acting on its own captured selection. */
+  /**
+   * Copies arbitrary text, for the menu acting on its own captured selection.
+   *
+   * Reports success rather than announcing it: the menu shows the outcome in its result
+   * panel, and flashing the overlay toast as well would put two confirmations on screen
+   * for one action, overlapping each other.
+   */
   async copyText(text: string): Promise<boolean> {
     if (!text) return false;
     try {
       await navigator.clipboard.writeText(text);
-      this.renderer.flashNotice('Copied ✓');
       return true;
     } catch (error) {
       log.warn('clipboard write failed', error);
@@ -235,14 +240,10 @@ export class SelectionManager {
     const text = this.current?.text;
     if (!text) return false;
 
-    try {
-      await navigator.clipboard.writeText(text);
-      this.renderer.flashNotice('Copied ✓');
-      return true;
-    } catch (error) {
-      log.warn('clipboard write failed', error);
-      return false;
-    }
+    // The keyboard path has no menu to report into, so the overlay toast is the feedback.
+    const ok = await this.copyText(text);
+    if (ok) this.renderer.flashNotice('Copied ✓');
+    return ok;
   }
 
   // ── Pointer gestures ────────────────────────────────────────────────────────

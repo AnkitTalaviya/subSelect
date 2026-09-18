@@ -30,7 +30,8 @@ import { Disposer } from './dom';
  */
 
 export interface ContextMenuCallbacks {
-  onCopy: (text: string) => void;
+  /** Resolves false when the clipboard refused the write, so the menu can say so. */
+  onCopy: (text: string) => Promise<boolean>;
   onDismiss: () => void;
   /** The menu changed size and needs placing again. */
   onResized: () => void;
@@ -164,10 +165,18 @@ export class ContextMenu {
     element.setAttribute('data-ss-theme', this.settings.theme);
     element.setAttribute('hidden', '');
 
-    // The menu is interactive, unlike the rest of the layer, but its events must not reach
-    // the player underneath — clicking Copy must never also pause the video (§43).
+    /*
+     * The menu is interactive, unlike the rest of the layer, but its events must not reach
+     * the player underneath — clicking Copy must never also pause the video (§43).
+     *
+     * This has to run in the **bubble** phase. Stopping propagation during capture on this
+     * element halts the event on its way *down*, so it never reaches the button that was
+     * clicked and no action ever runs — which is exactly how this was broken. Bubbling
+     * instead lets the target's own handler fire first, then stops the event here before
+     * any ancestor of the menu sees it.
+     */
     for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
-      this.disposer.listen(element, type, (event) => event.stopPropagation(), { capture: true });
+      this.disposer.listen(element, type, (event) => event.stopPropagation());
     }
     this.disposer.listen(element, 'keydown', (event) => this.onKeyDown(event as KeyboardEvent));
 
@@ -234,7 +243,16 @@ export class ContextMenu {
       id: 'copy',
       label: 'Copy',
       icon: '📋',
-      run: () => this.callbacks.onCopy(selection.text),
+      // Reported in the menu like every other action. The overlay's own "Copied ✓" flash
+      // is easy to miss, and a refused clipboard write would otherwise be silent.
+      run: () =>
+        void this.callbacks.onCopy(selection.text).then((ok) =>
+          this.setResult(
+            ok
+              ? { state: 'ok', text: 'Copied ✓' }
+              : { state: 'error', text: 'Could not copy — the page blocked clipboard access.' },
+          ),
+        ),
     });
 
     return actions;
@@ -344,8 +362,12 @@ export class ContextMenu {
       },
     });
 
-    if (outcome?.ok) this.setResult({ state: 'ok', text: `Saved · ${outcome.data.total} words` });
-    else this.setResult({ state: 'error', text: outcome?.message ?? 'Could not save this word.' });
+    if (outcome?.ok) {
+      const total = outcome.data.total;
+      this.setResult({ state: 'ok', text: `Saved · ${total} ${total === 1 ? 'word' : 'words'}` });
+    } else {
+      this.setResult({ state: 'error', text: outcome?.message ?? 'Could not save this word.' });
+    }
   }
 
   /**

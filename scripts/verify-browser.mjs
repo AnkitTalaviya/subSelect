@@ -278,6 +278,38 @@ try {
     check('drag selects multiple words', dragged >= 2, `${dragged} highlighted`);
     console.log('   phrase:', await cdp.eval(`[...document.querySelectorAll('[data-ss-selected="true"]')].map(e=>e.textContent).join(' ')`));
 
+    // Every menu action must actually run when clicked.
+    for (const label of ['Translate', 'Definition', 'Pronounce', 'Save', 'Copy']) {
+      const spot = JSON.parse(
+        await cdp.eval(`(()=>{const b=[...document.querySelectorAll('.subselect-menu-item')]
+          .find(x=>x.textContent.includes(${JSON.stringify(label)}));
+          if(!b) return JSON.stringify({found:false});
+          const r=b.getBoundingClientRect();
+          return JSON.stringify({found:true,x:r.x+r.width/2,y:r.y+r.height/2})})()`),
+      );
+      if (!spot.found) {
+        check(`menu action "${label}" present`, false);
+        continue;
+      }
+      // Drop any previous panel, so a stale result cannot pass this check for us.
+      await cdp.eval("document.querySelector('.subselect-menu-result')?.remove(); 1");
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await cdp.send('Input.dispatchMouseEvent', {
+          type, x: spot.x, y: spot.y, button: 'left', clickCount: 1,
+          buttons: type === 'mousePressed' ? 1 : 0,
+        });
+        await sleep(60);
+      }
+      await sleep(900);
+      const panel = await cdp.eval(
+        `(()=>{const p=document.querySelector('.subselect-menu-result');
+          return p ? (p.dataset.ssState + ': ' + p.textContent.trim().slice(0,70)) : ''})()`,
+      );
+      check(`menu action "${label}" responds`, Boolean(panel), panel || 'no result panel');
+    }
+
+    // Captured with a result on screen, so the image shows the feature working rather
+    // than merely rendering.
     await cdp.send('Page.captureScreenshot', { format: 'png' }).then((s) =>
       writeFileSync(join(ROOT, 'verify.png'), Buffer.from(s.data, 'base64')),
     );
