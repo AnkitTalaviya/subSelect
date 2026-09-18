@@ -184,6 +184,27 @@ try {
     width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
   });
 
+  /*
+   * Record the page's own interval ids before any page script runs.
+   *
+   * The freeze used to be `clearInterval(1..5000)`, which is far too blunt: a content
+   * script's timers live in the same window timer table as the page's, so that was also
+   * cancelling the extension's — including the health check whose recovery this file is
+   * meant to verify. Only ids the page itself created are cleared now.
+   */
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      const ids = [];
+      window.__ssPageTimers = ids;
+      const original = window.setInterval;
+      window.setInterval = function (...args) {
+        const id = original.apply(this, args);
+        ids.push(id);
+        return id;
+      };
+    })();`,
+  });
+
   console.log(`\nnavigating to https://www.youtube.com/${PAGE}\n`);
   await cdp.send('Page.navigate', { url: `https://www.youtube.com/${PAGE}` });
   await sleep(3500);
@@ -201,7 +222,7 @@ try {
 
   if (words > 0) {
     // Freeze the caption carousel so the remaining assertions are not racing a cue change.
-    await cdp.eval('for (let i = 1; i < 5000; i++) clearInterval(i); "frozen"');
+    await cdp.eval('(window.__ssPageTimers ?? []).forEach(clearInterval); "frozen"');
     await sleep(400);
     console.log('   cue:', await cdp.eval('document.querySelector(".subselect-layer").textContent.trim()'));
 
@@ -591,6 +612,67 @@ try {
     check('Escape clears the selection', (await cdp.eval('document.querySelectorAll(\'[data-ss-selected="true"]\').length')) === 0);
     check('Escape closes the menu',
       Boolean(await cdp.eval('(()=>{const m=document.querySelector(".subselect-menu");return !m||m.hasAttribute("hidden")})()')));
+
+    /*
+     * Recovery, without reloading the page or toggling the extension.
+     *
+     * Players rebuild their DOM on a seek, an episode change or a re-render, taking our
+     * overlay and the nodes we observe with it. Observers on a detached subtree never fire
+     * again, so the engine used to sit bound to nothing and the feature looked dead until
+     * it was switched off and on. Each case below is one of those, done deliberately.
+     */
+    const recover = async (label, breakIt) => {
+      await breakIt();
+      let words = 0;
+      for (let i = 0; i < 24; i++) {
+        await sleep(500);
+        words = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+        if (words > 0) break;
+      }
+      if (words === 0) {
+        const state = await cdp.eval(`(()=>JSON.stringify({
+          layer: !!document.querySelector('.subselect-layer'),
+          hiddenHost: !!document.querySelector('[data-subselect-hidden="true"]'),
+          captionText: (document.querySelector('.timedtext, .captions-text, #captions')?.textContent ?? '').trim().slice(0,40),
+          videos: document.querySelectorAll('video').length,
+          visibility: document.visibilityState,
+        }))()`);
+        console.log(`      state: ${state}`);
+      }
+      check(`recovers by itself: ${label}`, words > 0, `${words} clickable words`);
+    };
+
+    // 1. The site removes our overlay.
+    await recover('overlay removed by the page', () =>
+      cdp.eval('document.querySelector(".subselect-layer")?.remove(); 1'),
+    );
+
+    // 2. The caption container is replaced by a different element.
+    await recover('caption container replaced', () =>
+      cdp.eval(`(()=>{
+        const host = document.querySelector('[data-subselect-hidden="true"]');
+        if (!host) return 0;
+        const fresh = host.cloneNode(false);
+        fresh.removeAttribute('data-subselect-hidden');
+        fresh.textContent = 'Ich muss mich heute entscheiden.';
+        host.replaceWith(fresh);
+        return 1})()`),
+    );
+
+    // 3. The whole player subtree is rebuilt, video element included — a Prime Video
+    //    transition between titles looks like this from the outside.
+    await recover('player rebuilt with a new video element', () =>
+      cdp.eval(`(()=>{
+        const video = document.querySelector('video');
+        const player = video.closest('.player, .html5-video-player') ?? video.parentElement;
+        const stream = video.srcObject;
+        const clone = player.cloneNode(true);
+        player.replaceWith(clone);
+        const fresh = clone.querySelector('video');
+        fresh.srcObject = stream;
+        fresh.play();
+        return 1})()`),
+    );
   }
 
   if (cdp.logs.length) console.log('\npage console:\n  ' + cdp.logs.slice(-12).join('\n  '));

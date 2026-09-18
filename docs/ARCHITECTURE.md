@@ -279,6 +279,32 @@ A bare `<video>` going fullscreen is the one case with no answer: its children a
 content and never render, so nothing can be drawn over it. The overlay stands down for the
 duration rather than pretending to work.
 
+### Staying alive (§36, §57)
+
+"On" has to mean the feature keeps working without being nursed — no reloads, no toggling
+the extension off and on. Three things used to break that, all of them ending in an engine
+bound to nodes that no longer existed:
+
+1. **Repeated failures were terminal.** `fail()` stopped the detector and never restarted
+   it, so a burst of errors during a player transition killed the feature for the life of
+   the page. It now backs off and retries after `TIMING.errorRecoveryMs`.
+2. **A replaced `<video>` ended the search.** `requestRebind` gave up when the element it
+   was asked to rebind had been detached — which is exactly what a player swapping videos
+   between titles does. It now hands the search back to the detector.
+3. **A rebuilt player took the overlay with it.** MutationObservers only fire on subtrees
+   that still exist, so once a re-render detached our layer and the nodes we were watching,
+   nothing could ever notice.
+
+The third is why there is a **health check** every `TIMING.healthCheckMs`. It is a handful
+of `isConnected` reads — the video, the player root, our layer, and the element being
+mirrored — not a scan, and it stops while the tab is hidden. Anything detached means a
+clean re-bind, or handing back to the detector when the video itself is gone.
+
+> Worth knowing when testing: a content script's timers live in the same window timer table
+> as the page's. A page calling `clearInterval` over a range of ids cancels the extension's
+> timers too. The browser harness used to do exactly that to freeze its caption carousel,
+> and silently disabled the health check it was meant to be verifying.
+
 ### Pausing to read (§43)
 
 Selecting a word pauses the video; clearing the selection resumes it. §58 forbids pausing,

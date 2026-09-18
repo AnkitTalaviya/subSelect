@@ -1,5 +1,5 @@
 import type { FrameState, FrameStatus, SubtitleCue, SubtitleSelection } from '@shared/types';
-import { MAX_CONSECUTIVE_ERRORS } from '@shared/constants';
+import { MAX_CONSECUTIVE_ERRORS, TIMING } from '@shared/constants';
 import { log } from '@shared/logger';
 import type { Settings } from '@shared/settings';
 import { ActiveVideoDetector } from './ActiveVideoDetector';
@@ -9,7 +9,7 @@ import { PositionTracker } from './PositionTracker';
 import { SelectionManager, type ClearReason } from './SelectionManager';
 import { UrlWatcher } from './UrlWatcher';
 import { selectAdapter } from './adapters/AdapterRegistry';
-import type { AdapterContext, SubtitleAdapter } from './adapters/types';
+import type { AdapterContext, AdapterPresentation, SubtitleAdapter } from './adapters/types';
 import { Disposer, findPlayerRoot, throttleTrailing } from './dom';
 
 /**
@@ -33,6 +33,8 @@ interface Binding {
   selection: SelectionManager;
   menu: ContextMenu;
   playerRoot: HTMLElement;
+  /** Kept so the health check can tell whether what we mirror still exists. */
+  presentation: AdapterPresentation;
   cue: SubtitleCue | null;
   dispose: () => void;
 }
@@ -49,6 +51,8 @@ export class SubtitleEngine {
   private rebindPending = false;
   /** True only while SubSelect is holding a pause it started itself. */
   private pausedByUs = false;
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private settings: Settings,
@@ -76,6 +80,12 @@ export class SubtitleEngine {
     this.disposer.listen(document, 'fullscreenchange', () => this.onFullscreenChange());
     this.disposer.listen(document, 'webkitfullscreenchange', () => this.onFullscreenChange());
 
+    this.healthTimer = setInterval(() => this.checkHealth(), TIMING.healthCheckMs);
+    this.disposer.add(() => {
+      if (this.healthTimer !== null) clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    });
+
     log.debug('engine started');
   }
 
@@ -83,6 +93,8 @@ export class SubtitleEngine {
     if (!this.running) return;
     this.running = false;
 
+    if (this.recoveryTimer !== null) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = null;
     this.releaseBinding();
     this.detector?.stop();
     this.detector = null;
@@ -243,6 +255,46 @@ export class SubtitleEngine {
     return status;
   }
 
+  /**
+   * Keeps "on" meaning on.
+   *
+   * MutationObservers only report on subtrees that still exist, so a player that rebuilds
+   * itself takes both our overlay and the nodes we were watching with it. The engine is
+   * then bound to elements that are no longer in the document, nothing will ever fire
+   * again, and the feature looks dead until the extension is toggled — which is precisely
+   * what a re-render, a seek or an episode change was doing.
+   *
+   * So liveness is checked rather than assumed. Everything here is an `isConnected` read;
+   * there is no scanning, and it stops while the tab is hidden.
+   */
+  private checkHealth(): void {
+    if (!this.running || document.visibilityState === 'hidden') return;
+
+    const binding = this.binding;
+    if (!binding) {
+      // Unbound: make sure something is still looking for a player.
+      this.detector?.refresh();
+      return;
+    }
+
+    const presentation = binding.presentation;
+    const detached =
+      !binding.video.isConnected ||
+      !binding.playerRoot.isConnected ||
+      // The site removed our overlay, so no click can reach a word any more.
+      binding.renderer.getLayer()?.isConnected !== true ||
+      (presentation.mode === 'mirror' && presentation.originalElement?.isConnected !== true);
+
+    if (!detached) return;
+
+    log.debug('binding went stale; rebuilding');
+    const video = binding.video;
+    this.releaseBinding();
+
+    if (video.isConnected) this.bind(video);
+    else this.detector?.refresh();
+  }
+
   /** SPA navigation: drop everything and let the detector find the new player (§36). */
   private onNavigate(): void {
     log.debug('navigation detected');
@@ -263,8 +315,20 @@ export class SubtitleEngine {
 
     setTimeout(() => {
       this.rebindPending = false;
-      if (!this.running || !video.isConnected) return;
+      if (!this.running) return;
+
       this.releaseBinding();
+
+      /*
+       * A player that swaps its <video> on a transition — Prime Video does — used to leave
+       * us here holding a dead binding and never looking again, so the extension appeared
+       * to stop working until it was toggled off and on. Hand the search back to the
+       * detector instead of giving up.
+       */
+      if (!video.isConnected) {
+        this.detector?.refresh();
+        return;
+      }
       this.bind(video);
     }, 0);
   }
@@ -345,6 +409,7 @@ export class SubtitleEngine {
         selection,
         menu,
         playerRoot: context.playerRoot,
+        presentation,
         cue: null,
         dispose: () => {
           menu.destroy();
@@ -487,16 +552,28 @@ export class SubtitleEngine {
   private fail(): void {
     this.errorCount++;
     this.releaseBinding();
+    this.setState('error');
 
+    /*
+     * Standing down used to mean stopping the detector and never starting it again, so a
+     * burst of errors during a player transition left the extension dead until it was
+     * toggled off and on. Backing off is right; giving up is not. The binding is released,
+     * the engine waits, and then it tries again from scratch — "on" has to mean it keeps
+     * working without being nursed.
+     */
     if (this.errorCount >= MAX_CONSECUTIVE_ERRORS) {
-      log.error(`standing down after ${this.errorCount} failures; playback is unaffected`);
-      this.setState('error');
-      this.detector?.stop();
-      this.detector = null;
+      log.error(`standing down after ${this.errorCount} failures; retrying shortly`);
+      if (this.recoveryTimer === null) {
+        this.recoveryTimer = setTimeout(() => {
+          this.recoveryTimer = null;
+          if (!this.running) return;
+          this.errorCount = 0;
+          this.detector?.refresh();
+        }, TIMING.errorRecoveryMs);
+      }
       return;
     }
 
-    this.setState('error');
     this.detector?.refresh();
   }
 

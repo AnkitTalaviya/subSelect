@@ -73,6 +73,20 @@ export const TIMING = {
   repositionFrames: 10,
   /** Trailing throttle for SPA URL checks. */
   urlWatchMs: 300,
+  /**
+   * Liveness check while the feature is on.
+   *
+   * Observers only fire on subtrees that still exist. A player that rebuilds itself —
+   * changing episode, seeking, re-creating its DOM — can take our overlay and the elements
+   * we were watching with it, leaving the engine bound to nothing and silently dead until
+   * the user toggled the extension. This notices and re-binds.
+   *
+   * It is a handful of `isConnected` reads, not a scan, and it stops while the tab is
+   * hidden or the feature is off.
+   */
+  healthCheckMs: 2000,
+  /** How long to wait before trying again after repeated failures. */
+  errorRecoveryMs: 5000,
 } as const;
 
 /** Consecutive pipeline failures before the engine stands down (§58). */

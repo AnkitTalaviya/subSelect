@@ -284,6 +284,13 @@ That includes bitmap and burned-in subtitles, captions rendered to `<canvas>`, a
 captions inside a closed shadow root. There is no workaround for these and SubSelect does
 not look for one. See [`docs/FEASIBILITY.md` §9](docs/FEASIBILITY.md#9-hard-boundaries-non-negotiable).
 
+## Staying on
+
+Turning SubSelect on is meant to be the last thing you do. It re-attaches by itself when a
+player changes episode, seeks, rebuilds its DOM, replaces its video element, or removes the
+overlay during a re-render — and after a burst of its own errors. No reloading, no toggling
+it off and on.
+
 ## Safety
 
 If anything in SubSelect fails, it restores the site's own captions, detaches from the
