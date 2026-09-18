@@ -148,6 +148,7 @@ interface FreeDictionaryEntry {
     partOfSpeech?: string;
     definitions?: Array<{ definition?: string; example?: string }>;
     synonyms?: string[];
+    antonyms?: string[];
   }>;
 }
 
@@ -187,26 +188,38 @@ class FreeDictionaryProvider implements DictionaryProvider {
     }
 
     const senses: DictionarySense[] = [];
+    const synonyms = new Set<string>();
+    const antonyms = new Set<string>();
+    let ipa: string | undefined;
+
     for (const entry of payload) {
+      if (!ipa && entry.phonetic) ipa = entry.phonetic.replace(/^\/|\/$/g, '');
       for (const meaning of entry.meanings ?? []) {
+        for (const word of meaning.synonyms ?? []) synonyms.add(word);
+        for (const word of meaning.antonyms ?? []) antonyms.add(word);
+
         for (const definition of meaning.definitions ?? []) {
           if (!definition.definition) continue;
           const sense: DictionarySense = { definition: definition.definition };
           if (meaning.partOfSpeech) sense.partOfSpeech = meaning.partOfSpeech;
           if (definition.example) sense.examples = [definition.example];
-          senses.push(sense);
-          if (senses.length >= 6) break;
+          if (senses.length < 6) senses.push(sense);
         }
-        if (senses.length >= 6) break;
       }
-      if (senses.length >= 6) break;
     }
 
     if (senses.length === 0) {
       throw new ProviderError('provider', `No definitions for "${headword}".`);
     }
 
-    return { headword, senses, providerId: this.meta.id };
+    return {
+      headword,
+      senses,
+      ...(synonyms.size > 0 ? { synonyms: [...synonyms].slice(0, 8) } : {}),
+      ...(antonyms.size > 0 ? { antonyms: [...antonyms].slice(0, 8) } : {}),
+      ...(ipa ? { ipa } : {}),
+      providerId: this.meta.id,
+    };
   }
 }
 

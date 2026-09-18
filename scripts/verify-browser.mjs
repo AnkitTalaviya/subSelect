@@ -279,7 +279,7 @@ try {
     console.log('   phrase:', await cdp.eval(`[...document.querySelectorAll('[data-ss-selected="true"]')].map(e=>e.textContent).join(' ')`));
 
     // Every menu action must actually run when clicked.
-    for (const label of ['Translate', 'Definition', 'Pronounce', 'Save', 'Copy']) {
+    for (const label of ['Translate', 'Pronounce', 'Save', 'Copy']) {
       const spot = JSON.parse(
         await cdp.eval(`(()=>{const b=[...document.querySelectorAll('.subselect-menu-item')]
           .find(x=>x.textContent.includes(${JSON.stringify(label)}));

@@ -89,7 +89,42 @@ export interface DictionaryResult {
   plural?: string;
   /** Verb forms, e.g. `{ Präteritum: 'entschied', 'Partizip II': 'entschieden' }`. */
   inflections?: Record<string, string>;
+  synonyms?: string[];
+  antonyms?: string[];
+  /** IPA, without slashes. */
+  ipa?: string;
   providerId: string;
+}
+
+/**
+ * Everything known about one selection, gathered from every source at once (§29, §65).
+ *
+ * One request, one panel. Translation and definition used to be separate menu actions,
+ * which meant two clicks and two waits to learn what a word means — and for a German noun
+ * neither of them told you the one thing you cannot use the word without: its article.
+ * Every field is optional; the panel renders what was found and says nothing about the
+ * rest.
+ */
+export interface WordDetails {
+  headword: string;
+  language?: string;
+  translation?: { text: string; providerId: string };
+  partOfSpeech?: string;
+  /** `der` / `die` / `das`. */
+  article?: string;
+  gender?: string;
+  plural?: string;
+  inflections?: Record<string, string>;
+  ipa?: string;
+  senses?: DictionarySense[];
+  synonyms?: string[];
+  antonyms?: string[];
+  /** Broader terms, e.g. Feuerwerk → Pyrotechnik. */
+  hypernyms?: string[];
+  /** Provider ids that contributed, so every panel says where it came from. */
+  sources: string[];
+  /** Reasons the missing parts are missing, for when nothing at all was found. */
+  problems: string[];
 }
 
 export interface DictionaryProvider {

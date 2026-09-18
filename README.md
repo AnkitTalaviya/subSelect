@@ -48,6 +48,7 @@ provider fails you see what each one said.
 | --- | --- |
 | Translation | on-device (if the browser has it) → MyMemory → Lingva |
 | Definitions | Wiktionary → Free Dictionary API |
+| Grammar (German) | German Wiktionary page templates |
 | Pronunciation | Wikimedia recording → speech synthesis |
 
 Any single provider can still be pinned in Settings, including LibreTranslate or DeepL
@@ -110,9 +111,39 @@ POST  { "text": "…", "source": "de", "target": "en", "context": "…" }
 | `Esc` | Closes the menu and clears the selection |
 | `Alt` + `Shift` + `S` | Turns interactive subtitles on and off |
 
-The menu offers **Translate**, **Definition**, **Pronounce**, **Save** and **Copy**.
-Translate and Definition say plainly when no provider is set up rather than inventing an
-answer; Save and Copy always work, with no provider and no network.
+The menu offers **Translate**, **Pronounce**, **Save** and **Copy**. Save and Copy always
+work, with no provider and no network.
+
+**Translate opens one panel with everything known about the word** — asking three sources
+at once rather than making you click twice and wait twice:
+
+```
+das Feuerwerk · neuter noun · Plural: die Feuerwerke · [ˈfɔɪ̯ɐˌvɛʁk]
+
+fireworks
+
+1. (noun) a display of fireworks
+   "Das Feuerwerk war schön."
+
+Synonyms  Feuerwerkskörper, Pyrotechnik
+Broader   Veranstaltung
+via mymemory, wiktionary, wiktionary-grammar
+```
+
+For verbs it shows the forms you are actually taught:
+
+```
+entscheiden
+Präteritum    entschied
+Partizip II   entschieden
+Hilfsverb     haben
+```
+
+The article matters most: `der/die/das` is not decoration, you cannot use a German noun
+without it, and no translation service returns it. It comes from German Wiktionary's own
+page templates. Grammar details are **German-only** so far — a generic extractor that
+half-worked everywhere would be worse than one that is right for the language the product
+is built around. Every block is omitted when its data is missing; nothing is invented.
 
 The shortcut defaults to `Alt+Shift+S`, not the brief's `Alt+S`. Extension commands
 intercept the key before the page sees it, so plain `Alt+S` would silently break any site

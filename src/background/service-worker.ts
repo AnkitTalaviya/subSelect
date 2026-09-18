@@ -4,7 +4,8 @@ import { log } from '@shared/logger';
 import { getSettings, setSettings } from '@shared/storage';
 import type { Settings } from '@shared/settings';
 import { COMMANDS, SESSION_KEYS } from '@shared/constants';
-import type { DictionaryProvider, TranslationProvider } from '../providers/types';
+import type { DictionaryProvider, TranslationProvider, WordDetails } from '../providers/types';
+import { fetchGrammar, grammarMeta, supportsGrammar } from '../providers/grammar/providers';
 import { runChain, type Refusal } from '../providers/chain';
 import { createTranslationChain } from '../providers/translation/providers';
 import { createDictionaryChain } from '../providers/dictionary/providers';
@@ -198,6 +199,95 @@ async function lookup(message: Extract<ExtensionMessage, { type: 'LOOKUP_WORD' }
   );
 }
 
+/**
+ * Everything about one selection, gathered in parallel.
+ *
+ * Translation, definitions and grammar come from different services, so they are asked at
+ * the same time rather than in sequence — the panel is then as fast as the slowest single
+ * source instead of the sum of all three. Each is allowed to fail independently: a word
+ * with no Wiktionary page still gets its translation, and a phrase too long to have an
+ * article still gets its meaning.
+ */
+async function wordDetails(message: Extract<ExtensionMessage, { type: 'GET_WORD_DETAILS' }>) {
+  const settings = await getSettings();
+  const language = message.language || settings.subtitleLanguage;
+  const gated = gateFor(settings);
+
+  const [translated, defined, grammared] = await Promise.all([
+    runChain(
+      createTranslationChain(settings),
+      (provider: TranslationProvider) =>
+        provider.translate(message.text, language, settings.translationLanguage, message.context),
+      { gate: gated, emptyMessage: 'Translation is turned off in settings.' },
+    ),
+    runChain(
+      createDictionaryChain(settings),
+      (provider: DictionaryProvider) => provider.lookup(message.lookupText || message.text, language),
+      { gate: gated, emptyMessage: 'Dictionary lookup is turned off in settings.' },
+    ),
+    supportsGrammar(language) && !/\s/.test(message.lookupText || message.text)
+      ? runChain([{ meta: grammarMeta }], () => fetchGrammar(message.lookupText || message.text, language), {
+          gate: gated,
+          emptyMessage: 'No grammar source.',
+        })
+      : Promise.resolve({ ok: false as const, kind: 'unsupported' as const, message: '' }),
+  ]);
+
+  const details: WordDetails = {
+    headword: message.lookupText || message.text,
+    language,
+    sources: [],
+    problems: [],
+  };
+
+  if (translated.ok) {
+    details.translation = { text: translated.data.text, providerId: translated.data.providerId };
+    details.sources.push(translated.data.providerId);
+  } else if (translated.message) {
+    details.problems.push(translated.message);
+  }
+
+  if (defined.ok) {
+    const result = defined.data;
+    details.senses = result.senses;
+    if (result.ipa) details.ipa = result.ipa;
+    if (result.synonyms) details.synonyms = result.synonyms;
+    if (result.antonyms) details.antonyms = result.antonyms;
+    if (result.senses[0]?.partOfSpeech) details.partOfSpeech = result.senses[0].partOfSpeech;
+    details.sources.push(result.providerId);
+  } else if (defined.message) {
+    details.problems.push(defined.message);
+  }
+
+  if (grammared.ok) {
+    const grammar = grammared.data;
+    // Grammar wins over the dictionary for these: it comes from a structured template
+    // rather than being inferred from prose.
+    if (grammar.article) details.article = grammar.article;
+    if (grammar.gender) details.gender = grammar.gender;
+    if (grammar.plural) details.plural = grammar.plural;
+    if (grammar.inflections) details.inflections = grammar.inflections;
+    if (grammar.ipa) details.ipa = grammar.ipa;
+    if (grammar.hypernyms) details.hypernyms = grammar.hypernyms;
+    if (grammar.synonyms) {
+      details.synonyms = [...new Set([...(details.synonyms ?? []), ...grammar.synonyms])].slice(0, 8);
+    }
+    details.sources.push(grammarMeta.id);
+  }
+
+  // Only a total blank is a failure; anything found is worth showing.
+  if (details.sources.length === 0) {
+    const blocked = !translated.ok && translated.kind === 'no-permission';
+    return {
+      ok: false as const,
+      kind: blocked ? ('no-permission' as const) : ('provider' as const),
+      message: [...new Set(details.problems)].join('\n') || 'Nothing found for this selection.',
+    };
+  }
+
+  return { ok: true as const, data: details };
+}
+
 async function pronounce(message: Extract<ExtensionMessage, { type: 'FIND_PRONUNCIATION' }>) {
   const settings = await getSettings();
   if (settings.pronunciationProvider !== 'wikimedia') {
@@ -219,6 +309,10 @@ chrome.runtime.onMessage.addListener((raw, sender, respond) => {
   const message = raw as ExtensionMessage;
 
   switch (message.type) {
+    case 'GET_WORD_DETAILS':
+      void wordDetails(message).then(respond);
+      return true;
+
     case 'FIND_PRONUNCIATION':
       void pronounce(message).then(respond);
       return true;

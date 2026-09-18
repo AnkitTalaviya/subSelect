@@ -7,6 +7,7 @@ import {
 } from '../src/providers/translation/providers';
 import { createDictionaryChain } from '../src/providers/dictionary/providers';
 import { findPronunciation } from '../src/providers/pronunciation/providers';
+import { fetchGrammar } from '../src/providers/grammar/providers';
 
 /**
  * Hits the real services.
@@ -76,6 +77,29 @@ describe.skipIf(!live)('live dictionary', () => {
       }
     }
     throw new Error(`no provider answered —\n${attempts.join('\n')}`);
+  }, 30_000);
+});
+
+describe.skipIf(!live)('live grammar', () => {
+  it('gets the article and plural for a German noun', async () => {
+    const grammar = await fetchGrammar('Feuerwerk', 'de');
+    console.log(`  Feuerwerk: ${JSON.stringify(grammar)}`);
+    expect(grammar.article).toBe('das');
+    expect(grammar.plural).toBe('Feuerwerke');
+  }, 30_000);
+
+  it('gets the past forms for a German verb', async () => {
+    const grammar = await fetchGrammar('entscheiden', 'de');
+    console.log(`  entscheiden: ${JSON.stringify(grammar.inflections)}`);
+    expect(grammar.inflections?.['Partizip II']).toBe('entschieden');
+    expect(grammar.inflections?.['Präteritum']).toBe('entschied');
+  }, 30_000);
+
+  it('gets a feminine noun right', async () => {
+    const grammar = await fetchGrammar('Entscheidung', 'de');
+    console.log(`  Entscheidung: ${grammar.article} / ${grammar.plural}`);
+    expect(grammar.article).toBe('die');
+    expect(grammar.plural).toBe('Entscheidungen');
   }, 30_000);
 });
 

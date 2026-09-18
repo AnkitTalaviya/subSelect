@@ -1,5 +1,10 @@
 import type { FrameStatus, SubtitleSelection } from './types';
-import type { DictionaryResult, ProviderOutcome, TranslationResult } from '../providers/types';
+import type {
+  DictionaryResult,
+  ProviderOutcome,
+  TranslationResult,
+  WordDetails,
+} from '../providers/types';
 import type { PronunciationResult } from '../providers/pronunciation/providers';
 
 /**
@@ -28,6 +33,15 @@ export type ExtensionMessage =
       sourceLanguage?: string;
     }
   | { type: 'LOOKUP_WORD'; text: string; language?: string }
+  | {
+      type: 'GET_WORD_DETAILS';
+      /** The selection as displayed, used for translation. */
+      text: string;
+      /** The normalized headword, used for dictionary and grammar lookups. */
+      lookupText?: string;
+      context?: string;
+      language?: string;
+    }
   | { type: 'FIND_PRONUNCIATION'; text: string; language?: string }
   | { type: 'SAVE_WORD'; word: SaveWordRequest }
   | { type: 'GET_VOCABULARY_COUNT' }
@@ -50,6 +64,7 @@ export interface MessageResponseMap {
   SELECTION_CHANGED: void;
   TRANSLATE_SELECTION: ProviderOutcome<TranslationResult>;
   LOOKUP_WORD: ProviderOutcome<DictionaryResult>;
+  GET_WORD_DETAILS: ProviderOutcome<WordDetails>;
   FIND_PRONUNCIATION: ProviderOutcome<PronunciationResult>;
   SAVE_WORD: ProviderOutcome<{ saved: true; total: number }>;
   GET_VOCABULARY_COUNT: number;

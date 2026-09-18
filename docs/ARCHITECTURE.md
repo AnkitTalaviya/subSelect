@@ -414,6 +414,29 @@ exactly backwards since those are the best recordings available.
 Either a provider returns definitions or the UI says lookup is not configured. A
 plausible-looking guess is worse than nothing for someone learning the language.
 
+### One panel, three sources (§29, §65)
+
+`GET_WORD_DETAILS` asks the translation chain, the dictionary chain and the German grammar
+source **in parallel** and merges them into a `WordDetails`. The panel is then as slow as
+the slowest single source rather than the sum of all three, and each source may fail
+independently — a word with no Wiktionary page still gets its translation.
+
+Translate and Definition used to be separate menu items. That meant two clicks and two
+waits to learn what a word means, and neither told a German learner the article, which is
+the one thing a noun cannot be used without.
+
+`providers/grammar/wikitext.ts` reads German Wiktionary's page templates for gender,
+plural, verb forms, IPA, synonyms and hypernyms — the facts the REST definition endpoint
+does not carry. It is a pure function over wikitext, so the parsing is unit tested against
+fixtures and separately checked against the live pages. Wikitext is community-edited, so
+the parse is best-effort throughout: a template that has changed shape yields nothing
+rather than nonsense, and every field is optional. Brace depth is counted rather than
+regex-matched, because these templates nest.
+
+Grammar is German-only by design (§13). The useful facts live in language-specific
+templates, and a generic extractor that half-worked everywhere would be worse than one
+that is correct for the language the product is built around.
+
 ### Vocabulary (§19–§22)
 
 `chrome.storage.local`, one array under one key — the list is small, and one key means

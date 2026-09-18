@@ -22,6 +22,11 @@ export const CLASS = {
   menuSenses: `${NS}-menu-senses`,
   menuPos: `${NS}-menu-pos`,
   menuLink: `${NS}-menu-link`,
+  menuGrammar: `${NS}-menu-grammar`,
+  menuTranslation: `${NS}-menu-translation`,
+  menuForms: `${NS}-menu-forms`,
+  menuRelated: `${NS}-menu-related`,
+  menuExample: `${NS}-menu-example`,
 } as const;
 
 export const ATTR = {

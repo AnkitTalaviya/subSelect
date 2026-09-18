@@ -2,7 +2,7 @@ import type { SubtitleSelection } from '@shared/types';
 import { CLASS, MENU_GAP_PX, MENU_MARGIN_PX } from '@shared/constants';
 import { sendMessage } from '@shared/messages';
 import type { Settings } from '@shared/settings';
-import type { DictionarySense } from '../providers/types';
+import type { DictionarySense, WordDetails } from '../providers/types';
 import { placeMenu, type Box } from './menuPlacement';
 import { isSpeechAvailable, speak, stopSpeaking, willUseRemoteVoice } from './speech';
 import { Disposer } from './dom';
@@ -48,6 +48,7 @@ interface MenuResult {
   state: 'loading' | 'ok' | 'error' | 'notice';
   text?: string;
   senses?: DictionarySense[];
+  details?: WordDetails;
   /** Provider id, shown so the user always knows where an answer came from. */
   via?: string;
   settingsLink?: boolean;
@@ -219,18 +220,14 @@ export class ContextMenu {
   private actionsFor(selection: SubtitleSelection): MenuAction[] {
     const actions: MenuAction[] = [];
 
+    // One action, not two. Translation and definition were separate items, which meant
+    // two clicks and two waits to learn what a word means — and neither told a German
+    // learner the article, without which the noun cannot be used.
     actions.push({
       id: 'translate',
       label: 'Translate',
       icon: '🌐',
-      run: () => void this.runTranslate(selection),
-    });
-
-    actions.push({
-      id: 'define',
-      label: 'Definition',
-      icon: '📖',
-      run: () => void this.runLookup(selection),
+      run: () => void this.runDetails(selection),
     });
 
     if (this.settings.speechEnabled && isSpeechAvailable()) {
@@ -273,46 +270,25 @@ export class ContextMenu {
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
-  private async runTranslate(selection: SubtitleSelection): Promise<void> {
-    const token = this.beginRun();
-    this.setResult({ state: 'loading', text: 'Translating…' }, token);
-
-    const outcome = await sendMessage({
-      type: 'TRANSLATE_SELECTION',
-      text: selection.text,
-      ...(selection.context ? { context: selection.context } : {}),
-      ...(selection.language ? { sourceLanguage: selection.language } : {}),
-    });
-
-    if (!outcome) {
-      this.setResult({ state: 'error', text: "Couldn't retrieve translation. Try again." }, token);
-      return;
-    }
-    if (!outcome.ok) {
-      this.showProviderProblem(outcome, token);
-      return;
-    }
-
-    this.lastTranslation = outcome.data.text;
-    this.setResult({ state: 'ok', text: outcome.data.text, via: outcome.data.providerId }, token);
-  }
-
-  private async runLookup(selection: SubtitleSelection): Promise<void> {
+  private async runDetails(selection: SubtitleSelection): Promise<void> {
     const token = this.beginRun();
     this.setResult({ state: 'loading', text: 'Looking up…' }, token);
 
-    // The headword, not the raw slice: a dictionary wants `geht's`, not `geht's?` (§40).
-    const word = selection.words.find((candidate) => candidate.isWordLike);
-    const term = selection.words.length === 1 && word ? word.normalizedText : selection.text;
+    // The dictionary wants the headword (`geht's`, not `geht's?`); translation wants the
+    // phrase as displayed (§40).
+    const single = selection.words.filter((word) => word.isWordLike);
+    const lookupText = single.length === 1 ? single[0]!.normalizedText : selection.text;
 
     const outcome = await sendMessage({
-      type: 'LOOKUP_WORD',
-      text: term,
+      type: 'GET_WORD_DETAILS',
+      text: selection.text,
+      lookupText,
+      ...(selection.context ? { context: selection.context } : {}),
       ...(selection.language ? { language: selection.language } : {}),
     });
 
     if (!outcome) {
-      this.setResult({ state: 'error', text: "Couldn't retrieve the definition. Try again." }, token);
+      this.setResult({ state: 'error', text: "Couldn't look that up. Try again." }, token);
       return;
     }
     if (!outcome.ok) {
@@ -320,17 +296,10 @@ export class ContextMenu {
       return;
     }
 
-    this.setResult({ state: 'ok', senses: outcome.data.senses, via: outcome.data.providerId }, token);
+    this.lastTranslation = outcome.data.translation?.text ?? null;
+    this.setResult({ state: 'ok', details: outcome.data }, token);
   }
 
-  /**
-   * Speaks the selection, preferring a real human recording.
-   *
-   * Wikimedia's Lingua Libre recordings are native speakers, which beats synthesis
-   * outright for a learner. Everything about that path can fail — no recording for the
-   * word, no approval for the host, a page CSP that blocks cross-origin media — so speech
-   * synthesis is the floor underneath it and always runs if the audio does not.
-   */
   private async runPronounce(selection: SubtitleSelection): Promise<void> {
     const token = this.beginRun();
     const speakIt = (): void => {
@@ -431,21 +400,10 @@ export class ContextMenu {
     panel.setAttribute('role', 'status');
     panel.setAttribute('aria-live', 'polite');
 
-    if (result.senses) {
-      const list = document.createElement('ol');
-      list.className = CLASS.menuSenses;
-      for (const sense of result.senses.slice(0, 4)) {
-        const item = document.createElement('li');
-        if (sense.partOfSpeech) {
-          const pos = document.createElement('span');
-          pos.className = CLASS.menuPos;
-          pos.textContent = sense.partOfSpeech;
-          item.appendChild(pos);
-        }
-        item.appendChild(document.createTextNode(sense.definition));
-        list.appendChild(item);
-      }
-      panel.appendChild(list);
+    if (result.details) {
+      this.renderDetails(panel, result.details);
+    } else if (result.senses) {
+      panel.appendChild(this.renderSenses(result.senses));
     } else if (result.text) {
       const line = document.createElement('p');
       line.className = CLASS.menuResultText;
@@ -481,6 +439,121 @@ export class ContextMenu {
 
   private clearResult(): void {
     this.element?.querySelector(`.${CLASS.menuResult}`)?.remove();
+  }
+
+  /**
+   * The learner panel (§29, §65).
+   *
+   * Ordered by what someone reaching for a word actually needs: the translation, then the
+   * grammar that governs how the word is used, then the meanings, then the related words.
+   * Every block is skipped when its data is absent — an empty "Synonyms:" label is worse
+   * than no label.
+   */
+  private renderDetails(panel: HTMLElement, details: WordDetails): void {
+    // "das Feuerwerk · neuter noun · Plural: die Feuerwerke · [ˈfɔɪ̯ɐˌvɛʁk]"
+    const grammarBits: string[] = [];
+    if (details.article) grammarBits.push(`${details.article} ${details.headword}`);
+    const kind = [details.gender, details.partOfSpeech?.toLowerCase()].filter(Boolean).join(' ');
+    if (kind) grammarBits.push(kind);
+    if (details.plural) {
+      grammarBits.push(`Plural: ${details.article ? 'die ' : ''}${details.plural}`);
+    }
+    if (details.ipa) grammarBits.push(`[${details.ipa}]`);
+
+    if (grammarBits.length > 0) {
+      const line = document.createElement('p');
+      line.className = CLASS.menuGrammar;
+      line.textContent = grammarBits.join(' · ');
+      panel.appendChild(line);
+    }
+
+    if (details.translation) {
+      const translation = document.createElement('p');
+      translation.className = CLASS.menuTranslation;
+      translation.textContent = details.translation.text;
+      panel.appendChild(translation);
+    }
+
+    if (details.inflections) {
+      panel.appendChild(
+        this.renderPairs(
+          Object.entries(details.inflections).map(([label, value]) => [label, value]),
+        ),
+      );
+    }
+
+    if (details.senses && details.senses.length > 0) {
+      panel.appendChild(this.renderSenses(details.senses));
+    }
+
+    for (const [label, words] of [
+      ['Synonyms', details.synonyms],
+      ['Opposites', details.antonyms],
+      ['Broader', details.hypernyms],
+    ] as const) {
+      if (!words || words.length === 0) continue;
+      const row = document.createElement('p');
+      row.className = CLASS.menuRelated;
+      const tag = document.createElement('span');
+      tag.className = CLASS.menuPos;
+      tag.textContent = label;
+      row.append(tag, document.createTextNode(words.join(', ')));
+      panel.appendChild(row);
+    }
+
+    if (details.translation === undefined && details.problems.length > 0) {
+      const note = document.createElement('p');
+      note.className = CLASS.menuNote;
+      note.textContent = 'No translation available.';
+      panel.appendChild(note);
+    }
+
+    if (details.sources.length > 0) {
+      const via = document.createElement('p');
+      via.className = CLASS.menuNote;
+      via.textContent = `via ${[...new Set(details.sources)].join(', ')}`;
+      panel.appendChild(via);
+    }
+  }
+
+  private renderSenses(senses: DictionarySense[]): HTMLElement {
+    const list = document.createElement('ol');
+    list.className = CLASS.menuSenses;
+
+    for (const sense of senses.slice(0, 4)) {
+      const item = document.createElement('li');
+      if (sense.partOfSpeech) {
+        const pos = document.createElement('span');
+        pos.className = CLASS.menuPos;
+        pos.textContent = sense.partOfSpeech;
+        item.appendChild(pos);
+      }
+      item.appendChild(document.createTextNode(sense.definition));
+
+      // One example, because seeing the word in use is worth more than a fourth gloss.
+      const example = sense.examples?.[0];
+      if (example) {
+        const quote = document.createElement('span');
+        quote.className = CLASS.menuExample;
+        quote.textContent = example;
+        item.appendChild(quote);
+      }
+      list.appendChild(item);
+    }
+    return list;
+  }
+
+  private renderPairs(pairs: Array<readonly [string, string]>): HTMLElement {
+    const table = document.createElement('dl');
+    table.className = CLASS.menuForms;
+    for (const [label, value] of pairs) {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const detail = document.createElement('dd');
+      detail.textContent = value;
+      table.append(term, detail);
+    }
+    return table;
   }
 
   private renderContents(selection: SubtitleSelection): void {
