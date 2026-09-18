@@ -1,5 +1,5 @@
 import type { SubtitleCue } from '@shared/types';
-import { CLASS } from '@shared/constants';
+import { ATTR, CLASS } from '@shared/constants';
 import { log } from '@shared/logger';
 import { buildCue } from '../SubtitleParser';
 import { Disposer, collectShadowRoots, throttleTrailing } from '../dom';
@@ -107,6 +107,14 @@ export class GenericDomAdapter implements SubtitleAdapter {
 
   private context: AdapterContext | null = null;
   private container: HTMLElement | null = null;
+  /**
+   * The element the overlay is mounted into, remembered rather than read back.
+   *
+   * A container that has just been replaced is already detached, so its `parentElement` is
+   * null — asking it where it lived reports "nowhere" and makes every in-place swap look
+   * like a move to somewhere else.
+   */
+  private parent: HTMLElement | null = null;
   private readonly disposer = new Disposer();
   private textObserver: MutationObserver | null = null;
   private parentObserver: MutationObserver | null = null;
@@ -122,6 +130,7 @@ export class GenericDomAdapter implements SubtitleAdapter {
   attach(context: AdapterContext): void {
     this.context = context;
     this.container = this.resolveContainer(context);
+    this.parent = this.container?.parentElement ?? null;
     log.debug('generic-dom attached to', this.container);
   }
 
@@ -129,16 +138,33 @@ export class GenericDomAdapter implements SubtitleAdapter {
     this.stopObservers();
     this.disposer.dispose();
     this.container = null;
+    this.parent = null;
     this.context = null;
     this.lastCueId = null;
   }
 
   getPresentation(): AdapterPresentation | null {
     if (!this.container) return null;
-    const mountParent = this.container.parentElement ?? this.context?.playerRoot;
+    const mountParent = this.parent ?? this.container.parentElement ?? this.context?.playerRoot;
     if (!mountParent) return null;
 
-    return { mode: 'mirror', mountParent, originalElement: this.container };
+    /*
+     * `originalElement` is a live getter, not a snapshot.
+     *
+     * Subscription players rebuild the caption element for every single cue rather than
+     * writing into it, so a snapshot is stale within seconds — the tracker would measure a
+     * detached node and the health check would call the binding dead. Reading it through
+     * the adapter lets the element be swapped underneath without anything above having to
+     * be torn down, which is what keeps an open panel open while the film carries on.
+     */
+    const self = this;
+    return {
+      mode: 'mirror',
+      mountParent,
+      get originalElement(): HTMLElement | undefined {
+        return self.container ?? undefined;
+      },
+    };
   }
 
   getCurrentCue(): SubtitleCue | null {
@@ -268,16 +294,39 @@ export class GenericDomAdapter implements SubtitleAdapter {
       return;
     }
 
-    // A different element means a different box to measure and a different parent to
-    // mount into, both of which the renderer read once at bind time. Ask for a clean
-    // rebind rather than quietly desynchronising the overlay from the player.
     if (next && this.container) {
-      log.debug('generic-dom caption container replaced; requesting rebind');
+      /*
+       * A replacement under the same parent is swapped in place, not rebuilt.
+       *
+       * Players that rebuild the caption element per cue — subscription services do this —
+       * used to force a full engine rebind every few seconds, and a rebind destroys the
+       * context menu. So a word could be clicked, its panel read for two seconds, and then
+       * the next subtitle would silently take the panel away: the exact opposite of the
+       * rule that a caption change is not the viewer saying they are finished.
+       *
+       * Nothing above needs rebuilding here. The mount point is the same element, the
+       * presentation reads `originalElement` live, and the tracker re-measures every frame
+       * anyway. Only a move to a *different* parent genuinely invalidates the overlay.
+       */
+      if (next.parentElement !== null && next.parentElement === this.parent) {
+        // Let the element we are leaving become visible again if it is still in the page.
+        if (this.container.isConnected) {
+          this.container.removeAttribute(ATTR.hiddenOriginal);
+        }
+        this.container = next;
+        this.bindObservers();
+        log.debug('generic-dom caption container swapped in place');
+        emit(true);
+        return;
+      }
+
+      log.debug('generic-dom caption container moved elsewhere; requesting rebind');
       this.context.invalidate();
       return;
     }
 
     this.container = next;
+    this.parent = next?.parentElement ?? this.parent;
     this.bindObservers();
     log.debug('generic-dom bound to', next);
     emit(true);
