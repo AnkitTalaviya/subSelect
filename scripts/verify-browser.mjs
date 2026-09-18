@@ -260,6 +260,10 @@ try {
     );
     check('click selects the word', selected === 1, `${selected} highlighted`);
 
+    // Selecting a word pauses so it can be read; clearing it hands playback back.
+    check('video pauses while a word is selected',
+      await cdp.eval('document.querySelector("video").paused'));
+
     // Selecting a word should look it up on its own, with no button pressed.
     let auto = '';
     for (let i = 0; i < 20; i++) {
@@ -271,7 +275,42 @@ try {
       await sleep(400);
     }
     check('selection triggers a lookup with no button press', Boolean(auto), auto || 'no panel appeared');
-    check('video still playing after click', await cdp.eval('!document.querySelector("video").paused'));
+    // Playback resumes only because SubSelect paused it in the first place.
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(600);
+    check('video resumes when the selection is cleared',
+      await cdp.eval('!document.querySelector("video").paused'));
+
+    /*
+     * A video the viewer paused must stay paused. Resuming it would take playback off the
+     * person watching, which is the one thing this feature must never do.
+     */
+    await cdp.eval('document.querySelector("video").pause(); 1');
+    await sleep(300);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cdp.send('Input.dispatchMouseEvent', {
+        type, x: box.x, y: box.y, button: 'left', clickCount: 1,
+        buttons: type === 'mousePressed' ? 1 : 0,
+      });
+      await sleep(60);
+    }
+    await sleep(400);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(600);
+    check('a video the viewer paused is left alone',
+      await cdp.eval('document.querySelector("video").paused'));
+
+    // Back to playing for the checks that follow.
+    await cdp.eval('document.querySelector("video").play(); 1');
+    await sleep(400);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cdp.send('Input.dispatchMouseEvent', {
+        type, x: box.x, y: box.y, button: 'left', clickCount: 1,
+        buttons: type === 'mousePressed' ? 1 : 0,
+      });
+      await sleep(60);
+    }
+    await sleep(500);
 
     const menu = JSON.parse(
       await cdp.eval(`(()=>{const m=document.querySelector('.subselect-menu');
@@ -499,6 +538,11 @@ try {
         h.textContent = 'Das ist allerdings schwierig.'; return 'changed'})()`);
       await sleep(900);
     } else {
+      // TextTrack cues follow the video clock, and selecting a word has paused it — which
+      // is the feature working. Let it run so a cue change can actually happen.
+      await cdp.eval('document.querySelector("video").play(); 1');
+      await sleep(300);
+
       await cdp.eval(`(()=>{
         const read = () => document.querySelector('.subselect-layer')?.textContent.trim() ?? '';
         const start = read();

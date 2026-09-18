@@ -47,6 +47,8 @@ export class SubtitleEngine {
   private errorCount = 0;
   private running = false;
   private rebindPending = false;
+  /** True only while SubSelect is holding a pause it started itself. */
+  private pausedByUs = false;
 
   constructor(
     private settings: Settings,
@@ -105,15 +107,60 @@ export class SubtitleEngine {
    * Selections arrive once per completed gesture, so the menu opens when the user has
    * finished choosing rather than flickering along with a drag.
    */
+  /**
+   * Pauses while a word is being read, and resumes when the reader is done.
+   *
+   * Only a video SubSelect paused itself is ever resumed. A video the viewer had already
+   * paused stays paused, and pressing play while reading clears the claim for good — so
+   * the extension can never take playback back off the person watching.
+   *
+   * §58 forbids pausing the video, but that clause is about failure: an extension that
+   * breaks must not break playback with it. This is the interaction itself asking, which
+   * §43 allows, and it is a setting.
+   */
+  private pauseForReading(video: HTMLVideoElement): void {
+    if (!this.settings.pauseOnSelect || this.pausedByUs) return;
+    if (video.paused || video.ended) return;
+
+    try {
+      video.pause();
+      this.pausedByUs = true;
+    } catch (error) {
+      log.debug('could not pause for reading', error);
+    }
+  }
+
+  private resumeAfterReading(video: HTMLVideoElement): void {
+    if (!this.pausedByUs) return;
+    this.pausedByUs = false;
+
+    try {
+      // Resuming follows a click or a key press, so autoplay policy allows it; a rejected
+      // promise would only mean the player refused, which is the player's call to make.
+      void video.play()?.catch(() => {});
+    } catch (error) {
+      log.debug('could not resume after reading', error);
+    }
+  }
+
   private publishSelection(selection: SubtitleSelection | null, reason: ClearReason = 'user'): void {
     const binding = this.binding;
     if (binding) {
-      if (selection) this.showMenu(binding, selection);
-      // A caption changing takes the highlighted words off screen, but it is not the user
-      // asking to close the menu they just opened — and captions change every few seconds,
-      // so closing here would make Translate and Definition impossible to read. The menu
-      // holds its own copy of the selection, so it stays useful after the words are gone.
-      else if (reason === 'user') binding.menu.hide();
+      if (selection) {
+        this.pauseForReading(binding.video);
+        this.showMenu(binding, selection);
+      }
+      /*
+       * A caption changing takes the highlighted words off screen, but it is not the user
+       * saying they are finished. Captions change every few seconds, so closing the menu
+       * here would make the answer impossible to read, and resuming would snatch the video
+       * back mid-sentence. Both wait for an actual dismissal; the menu keeps its own copy
+       * of the selection, so it stays useful after the words are gone.
+       */
+      else if (reason === 'user') {
+        binding.menu.hide();
+        this.resumeAfterReading(binding.video);
+      }
     }
     this.onSelection(selection);
   }
@@ -306,6 +353,24 @@ export class SubtitleEngine {
           renderer.destroy();
           adapter.detach();
         },
+      };
+
+      /*
+       * If the viewer presses play while reading, the claim is released for good. Without
+       * this, dismissing the selection later would call play() on a video that is already
+       * playing — harmless — but a subsequent pause-and-resume cycle could fight whatever
+       * the viewer had chosen. Playback belongs to the person watching.
+       */
+      const onPlay = (): void => {
+        this.pausedByUs = false;
+      };
+      video.addEventListener('play', onPlay);
+      const disposeBinding = binding.dispose;
+      binding.dispose = () => {
+        video.removeEventListener('play', onPlay);
+        // Never leave a video paused because SubSelect went away.
+        this.resumeAfterReading(video);
+        disposeBinding();
       };
 
       this.binding = binding;

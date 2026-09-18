@@ -29,6 +29,7 @@ const controls = {
   debug: el<HTMLInputElement>('debug'),
   subtitleLanguage: el<HTMLSelectElement>('subtitleLanguage'),
   clickToSelect: el<HTMLInputElement>('clickToSelect'),
+  pauseOnSelect: el<HTMLInputElement>('pauseOnSelect'),
   dragToSelect: el<HTMLInputElement>('dragToSelect'),
   doubleClickToSelect: el<HTMLInputElement>('doubleClickToSelect'),
   showContextMenu: el<HTMLInputElement>('showContextMenu'),
@@ -95,6 +96,7 @@ function render(settings: Settings): void {
   controls.debug.checked = settings.debug;
   controls.subtitleLanguage.value = settings.subtitleLanguage;
   controls.clickToSelect.checked = settings.clickToSelect;
+  controls.pauseOnSelect.checked = settings.pauseOnSelect;
   controls.dragToSelect.checked = settings.dragToSelect;
   controls.doubleClickToSelect.checked = settings.doubleClickToSelect;
   controls.showContextMenu.checked = settings.showContextMenu;
@@ -146,7 +148,7 @@ async function renderLookups(settings: Settings): Promise<void> {
 
   if (granted) {
     hint.textContent =
-      'On. The word you select is sent to a free service only when you press Translate, Definition or Pronounce.';
+      'On. Words you select are sent to a free service to be looked up — nothing else, and nothing in the background.';
     button.textContent = 'Turn off';
     button.onclick = () => {
       void chrome.permissions
@@ -277,6 +279,7 @@ const toggles: Array<keyof Settings & keyof typeof controls> = [
   'enabled',
   'debug',
   'clickToSelect',
+  'pauseOnSelect',
   'dragToSelect',
   'doubleClickToSelect',
   'showContextMenu',

@@ -103,8 +103,8 @@ POST  { "text": "…", "source": "de", "target": "en", "context": "…" }
 
 | Gesture | Result |
 | --- | --- |
-| Click a word | Selects it, opens the menu, and **looks it up straight away** |
-| Click it again | Clears the selection |
+| Click a word | Selects it, **pauses the video**, opens the menu, and looks it up straight away |
+| Click it again | Clears the selection and resumes playback |
 | Drag across words | Selects the phrase — any direction, across both caption lines |
 | Double-click | Selects the whole caption |
 | `Ctrl`/`Cmd` + `C` | Copies exactly the selected text, nothing else |
@@ -286,10 +286,16 @@ not look for one. See [`docs/FEASIBILITY.md` §9](docs/FEASIBILITY.md#9-hard-bou
 
 ## Safety
 
-The video always wins. If anything in SubSelect fails, it restores the site's own
-captions, detaches from the player and stays out of the way. It never pauses, seeks,
-re-sources or restyles the video, and it never restructures the player's DOM — the only
-thing it ever writes to a site's element is one attribute.
+If anything in SubSelect fails, it restores the site's own captions, detaches from the
+player and stays out of the way. It never seeks, re-sources or restyles the video, and it
+never restructures the player's DOM — the only thing it ever writes to a site's element is
+one attribute. The caption keeps the player's own size, family and weight; SubSelect is a
+language tool, not a caption-size tool.
+
+It does **pause** — selecting a word pauses so you can read, and clearing it resumes. That
+is the interaction asking, not a failure, and it is governed by three rules: it only ever
+resumes a video it paused itself, pressing play hands control back permanently, and a video
+you had already paused is left alone. Turn it off with *Pause the video while I read*.
 
 ---
 

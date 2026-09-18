@@ -279,6 +279,23 @@ A bare `<video>` going fullscreen is the one case with no answer: its children a
 content and never render, so nothing can be drawn over it. The overlay stands down for the
 duration rather than pretending to work.
 
+### Pausing to read (§43)
+
+Selecting a word pauses the video; clearing the selection resumes it. §58 forbids pausing,
+but that clause is about *failure* — an extension that breaks must not break playback with
+it. This is the interaction itself asking, which §43 permits, and it is a setting.
+
+Three rules keep playback the viewer's:
+
+1. Only a video SubSelect paused itself is ever resumed, so one you had already paused
+   stays paused.
+2. Pressing play releases the claim permanently — a `play` listener clears the flag, so a
+   later dismissal cannot snatch the video back.
+3. Tearing the binding down resumes, so SubSelect going away never leaves a video stuck.
+
+A caption change does **not** resume: captions change every few seconds, and resuming there
+would pull the video out from under someone mid-sentence. Only an actual dismissal does.
+
 ### `UrlWatcher` (§36)
 `popstate` + `hashchange` + a throttled `MutationObserver` on `<title>` and
 `documentElement`, comparing `location.href`. On change: full teardown, then re-attach.

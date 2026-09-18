@@ -60,6 +60,13 @@ export interface Settings {
 
   /** Interaction (§43). */
   clickToSelect: boolean;
+  /**
+   * Pause the video while a word is selected, and resume when the selection is dropped.
+   *
+   * Only ever resumes a video SubSelect paused itself, so a video the viewer paused stays
+   * paused, and pressing play while reading permanently hands control back.
+   */
+  pauseOnSelect: boolean;
   /** Drag across words to select a phrase. */
   dragToSelect: boolean;
   /** Double-click a word to select the whole caption. */
@@ -104,6 +111,7 @@ export const DEFAULT_SETTINGS: Settings = {
   termsAcceptedAt: 0,
   saveContext: true,
   clickToSelect: true,
+  pauseOnSelect: true,
   dragToSelect: true,
   doubleClickToSelect: true,
   showContextMenu: true,
