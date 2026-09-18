@@ -128,10 +128,12 @@ export class SubtitleEngine {
     const binding = this.binding;
     if (!binding?.menu.isVisible()) return;
 
-    // No anchor means the caption the selection came from is gone. The menu stays where it
-    // is rather than being hidden — it still holds the selection the user opened it with.
+    // No anchor means the caption the selection came from is gone. The menu keeps the
+    // selection it was opened with, and re-places against its last known anchor so that
+    // growing content still cannot push it over the subtitle.
     const anchor = binding.renderer.selectionRect();
     if (anchor) binding.menu.reposition(anchor, this.menuBounds(binding));
+    else binding.menu.reposition();
   }
 
   /** The menu stays inside the video box, which is also what the player may clip to. */
@@ -336,13 +338,27 @@ export class SubtitleEngine {
     if (!binding) return;
 
     try {
-      const changed = cue?.id !== binding.cue?.id;
+      const previous = binding.cue;
+      const changed = cue?.id !== previous?.id;
+
+      /*
+       * Auto-generated captions grow a word at a time rather than being replaced line by
+       * line — YouTube's are the common case. Treating every growth as a new caption
+       * dropped the selection two or three times a second, which made the feature unusable
+       * exactly where a learner most wants it.
+       *
+       * When the new text merely extends the old, the words already on screen are the same
+       * words at the same offsets, so the selection survives. Word ids are derived from
+       * those offsets, which is what makes this safe rather than a guess.
+       */
+      const extended = Boolean(previous && cue && cue.text.startsWith(previous.text));
       binding.cue = cue;
 
-      // A new caption invalidates whatever was selected in the old one (§16).
-      if (changed) binding.selection.clear('cue-change');
+      // A genuinely new caption invalidates whatever was selected in the old one (§16).
+      if (changed && !extended) binding.selection.clear('cue-change');
 
       binding.renderer.render(cue);
+      if (changed && extended && cue) binding.selection.refreshAfterExtend(cue.id);
       if (cue) binding.tracker.refresh();
 
       this.setState(cue ? 'active' : 'waiting-for-cue');

@@ -242,6 +242,16 @@ Clears on Escape, outside click, cue change, video change and teardown. Stops pr
 on word hits only, so clicking a caption never pauses the video while clicking anywhere
 else still does.
 
+**Rolling captions.** Auto-generated captions — YouTube's especially — grow a word at a
+time instead of being replaced line by line. Treating each growth as a new caption dropped
+the selection two or three times a second and cancelled any drag in progress, which made
+the feature unusable exactly where a learner most wants it. When the new cue text *extends*
+the old, `SubtitleEngine` keeps the selection and calls `refreshAfterExtend`: the highlight
+is re-applied to the rebuilt overlay, and an in-flight drag gets fresh rects, because a
+centred caption re-centres as it grows and the words shift even though they are the same
+words. Word ids are derived from character offsets, which is what makes the match safe
+rather than a guess. A genuinely different caption still clears, as §16 asks.
+
 ### `ContextMenu` (§16, §47)
 Mounted inside the player container, like the overlay, so it survives fullscreen for free.
 The cost is that a player with `overflow: hidden` can clip it, which is why

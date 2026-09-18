@@ -183,6 +183,22 @@ export class SelectionManager {
   }
 
   /**
+   * Re-attaches the selection after a caption grew rather than changed.
+   *
+   * The overlay is rebuilt on every cue, so the highlight has to be put back on the new
+   * elements. An in-flight drag is kept alive too, with fresh rects: a centred caption
+   * re-centres as it grows, so the words shift even though they are the same words, and
+   * the geometry cached at the start of the drag would point at the wrong ones.
+   */
+  refreshAfterExtend(cueId: string): void {
+    if (this.current) this.renderer.setSelected(this.current.words.map((word) => word.id));
+    if (this.drag) {
+      this.drag.cueId = cueId;
+      this.drag.rects = this.renderer.wordRects();
+    }
+  }
+
+  /**
    * Copies arbitrary text, for the menu acting on its own captured selection.
    *
    * Reports success rather than announcing it: the menu shows the outcome in its result

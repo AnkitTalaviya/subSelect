@@ -200,7 +200,7 @@ try {
   check('SubSelect overlay rendered', words > 0, `${words} clickable words`);
 
   if (words > 0) {
-    // Freeze the caption carousel so the assertions are not racing a cue change.
+    // Freeze the caption carousel so the remaining assertions are not racing a cue change.
     await cdp.eval('for (let i = 1; i < 5000; i++) clearInterval(i); "frozen"');
     await sleep(400);
     console.log('   cue:', await cdp.eval('document.querySelector(".subselect-layer").textContent.trim()'));
@@ -370,20 +370,94 @@ try {
       check(`menu action "${label}" responds`, Boolean(panel), panel || 'no result panel');
     }
 
+    /*
+     * Rolling captions, driven deterministically.
+     *
+     * Auto-generated captions (YouTube's especially) grow a word at a time rather than
+     * being replaced line by line. Treating each growth as a new caption dropped the
+     * selection two or three times a second, which made the feature unusable exactly where
+     * a learner most wants it. The page's own timer is too racy to assert against, so the
+     * caption is grown by hand here.
+     */
+    if (mirrored) {
+      await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]');
+        h.textContent = 'Ich möchte morgen'; return 1})()`);
+      await sleep(600);
+
+      const first = JSON.parse(
+        await cdp.eval(`(()=>{const w=document.querySelectorAll('.subselect-word');
+          if(!w.length) return JSON.stringify({found:false});
+          const r=w[0].getBoundingClientRect();
+          return JSON.stringify({found:true,x:r.x+r.width/2,y:r.y+r.height/2,text:w[0].textContent})})()`),
+      );
+
+      if (first.found) {
+        for (const type of ['mousePressed', 'mouseReleased']) {
+          await cdp.send('Input.dispatchMouseEvent', {
+            type, x: first.x, y: first.y, button: 'left', clickCount: 1,
+            buttons: type === 'mousePressed' ? 1 : 0,
+          });
+          await sleep(60);
+        }
+        await sleep(400);
+
+        // One more word arrives, exactly as ASR captions do.
+        await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]');
+          h.textContent = 'Ich möchte morgen nach'; return 1})()`);
+        await sleep(700);
+
+        const kept = await cdp.eval(
+          'document.querySelectorAll(\'.subselect-word[data-ss-selected="true"]\').length',
+        );
+        const words = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+        check('selection survives a caption growing', kept === 1,
+          `"${first.text}" kept while the line grew to ${words} words: ${kept} highlighted`);
+
+        // A genuinely different caption must still clear it.
+        await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]');
+          h.textContent = 'Das ist etwas völlig anderes.'; return 1})()`);
+        await sleep(700);
+        const cleared = await cdp.eval(
+          'document.querySelectorAll(\'.subselect-word[data-ss-selected="true"]\').length',
+        );
+        check('a different caption still clears the selection', cleared === 0, `${cleared} highlighted`);
+      }
+    }
+
     // Captured with a result on screen, so the image shows the feature working rather
     // than merely rendering.
     await cdp.send('Page.captureScreenshot', { format: 'png' }).then((s) =>
       writeFileSync(join(ROOT, 'verify.png'), Buffer.from(s.data, 'base64')),
     );
 
-    // The caption carousel is frozen, so drive a cue change by hand: the menu must survive
-    // it (captions change every few seconds; a menu that dies with them is unreadable).
-    await cdp.eval(`(()=>{const c=document.getElementById('captions');
-      c.replaceChildren();
-      const d=document.createElement('div'); d.className='timedtext-line';
-      const s=document.createElement('span'); s.textContent='Das ist allerdings schwierig.';
-      d.appendChild(s); c.appendChild(d); return 'changed';})()`);
-    await sleep(900);
+    /*
+     * Drive a genuine caption change: the menu must survive it, because captions change
+     * every few seconds and a menu that dies with them cannot be read.
+     *
+     * Mirror mode is rewritten directly. Derived (TextTrack) mode cannot be — its cues are
+     * driven by the video clock, which is also why freezing timers does not settle that
+     * page — so it waits for the next natural cue instead.
+     */
+    if (mirrored) {
+      await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]');
+        h.textContent = 'Das ist allerdings schwierig.'; return 'changed'})()`);
+      await sleep(900);
+    } else {
+      await cdp.eval(`(()=>{
+        const read = () => document.querySelector('.subselect-layer')?.textContent.trim() ?? '';
+        const start = read();
+        return new Promise(resolve => {
+          let left = 40;
+          const timer = setInterval(() => {
+            if (read() !== start || --left <= 0) { clearInterval(timer); resolve('changed'); }
+          }, 250);
+        });
+      })()`);
+      await sleep(500);
+      // Stop the clock so the remaining assertions are not racing the next cue.
+      await cdp.eval('document.querySelector("video").pause(); 1');
+      await sleep(300);
+    }
     const afterCue = JSON.parse(
       await cdp.eval(`(()=>{const m=document.querySelector('.subselect-menu');
         return JSON.stringify({menuOpen: !!m && !m.hasAttribute('hidden'),

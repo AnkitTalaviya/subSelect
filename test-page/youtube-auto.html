@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test — YouTube-style auto captions</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0f0f0f;
+        color: #f1f1f1;
+        font: 14px/1.6 Roboto, system-ui, sans-serif;
+        padding: 24px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #aaa; max-width: 68ch; }
+      code { background: #272727; padding: 1px 5px; border-radius: 4px; }
+      kbd { background: #272727; border: 1px solid #3f3f3f; border-radius: 4px; padding: 0 4px; }
+
+      /* Mirrors YouTube's structure: a full-player overlay container, with the caption
+         box positioned near the bottom inside it. The container being player-sized is the
+         part that matters — measuring it instead of the text puts an overlay in the wrong
+         place entirely. */
+      .html5-video-player {
+        position: relative;
+        width: min(960px, 100%);
+        aspect-ratio: 16 / 9;
+        background: #000;
+        overflow: hidden;
+      }
+      .html5-video-container { position: absolute; inset: 0; }
+      .html5-video-container video { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+      .ytp-caption-window-container {
+        position: absolute;
+        inset: 0;                 /* the whole player, not the caption */
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .caption-window {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 8%;
+        max-width: 90%;
+        text-align: center;
+      }
+      .captions-text {
+        display: block;
+      }
+      .ytp-caption-segment {
+        display: inline-block;
+        background: rgba(8, 8, 8, 0.75);
+        color: #fff;
+        font-size: clamp(15px, 3vw, 32px);
+        line-height: 1.32;
+        padding: 0.05em 0.35em;
+        white-space: pre-wrap;
+      }
+      .ytp-chrome-bottom {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 40px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+      }
+      .controls { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+      button {
+        background: #272727; color: #f1f1f1; border: 1px solid #3f3f3f;
+        border-radius: 18px; padding: 7px 14px; font: inherit; cursor: pointer;
+      }
+      .diag { margin-top: 18px; padding: 12px 16px; border: 1px solid #3f3f3f; border-radius: 8px; max-width: 68ch; }
+      .diag h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #aaa; }
+      .diag ul { margin: 0; padding: 0; list-style: none; }
+      .diag .ok { color: #7ee08a; }
+      .diag .bad { color: #ff9d9d; }
+      .diag p { margin: 10px 0 0; color: #aaa; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>SubSelect test — YouTube-style auto-generated captions</h1>
+    <p class="lede">
+      Reproduces the two things that make auto-generated captions different from ordinary
+      ones: the caption container is the size of the <em>whole player</em> rather than the
+      text, and the text <em>grows word by word</em> instead of being replaced line by
+      line. Select a word part way through a line — the highlight must survive the next
+      word arriving. <kbd>Esc</kbd> clears.
+    </p>
+
+    <div class="html5-video-player" id="movie_player">
+      <div class="html5-video-container"><video id="video" playsinline></video></div>
+      <div class="ytp-caption-window-container" id="ytp-caption-window-container">
+        <div class="caption-window ytp-caption-window-bottom" id="caption-window-1" dir="ltr">
+          <span class="captions-text" id="captions-text"></span>
+        </div>
+      </div>
+      <div class="ytp-chrome-bottom"></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play">Play</button>
+      <button type="button" id="fullscreen">Fullscreen</button>
+      <button type="button" id="restart">Restart captions</button>
+    </div>
+
+    <section class="diag">
+      <h2>Diagnostics</h2>
+      <ul id="diag-list"></ul>
+      <p>
+        If SubSelect's overlay is present but sits at the top of the video rather than on
+        the caption, it has measured the full-size container instead of the text.
+      </p>
+    </section>
+
+    <script src="./shared.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var video = document.getElementById('video');
+        var player = document.getElementById('movie_player');
+        var text = document.getElementById('captions-text');
+
+        SubSelectTest.startCanvasVideo(video);
+
+        var LINES = SubSelectTest.LINES.map(function (l) { return l.replace('\n', ' '); });
+        var line = 0;
+        var word = 0;
+        var timer = null;
+
+        /** Grows the current line one word at a time, the way ASR captions arrive. */
+        function tick() {
+          var words = LINES[line % LINES.length].split(' ');
+          word += 1;
+
+          if (word > words.length) {
+            line += 1;
+            word = 1;
+            words = LINES[line % LINES.length].split(' ');
+          }
+
+          var segment = document.createElement('span');
+          segment.className = 'ytp-caption-segment';
+          segment.textContent = words.slice(0, word).join(' ');
+          text.replaceChildren(segment);
+        }
+
+        function start() {
+          if (timer) clearInterval(timer);
+          line = 0;
+          word = 0;
+          tick();
+          timer = setInterval(tick, 700);
+        }
+        start();
+
+        document.getElementById('play').addEventListener('click', function () { video.play(); });
+        document.getElementById('fullscreen').addEventListener('click', function () {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else player.requestFullscreen();
+        });
+        document.getElementById('restart').addEventListener('click', start);
+
+        SubSelectTest.startDiagnostics(document.getElementById('diag-list'), video, function () {
+          return text.textContent.trim();
+        });
+      })();
+    </script>
+  </body>
+</html>

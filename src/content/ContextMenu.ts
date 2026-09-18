@@ -107,6 +107,9 @@ export class ContextMenu {
   private runToken = 0;
   /** Pending automatic lookup, cancelled by the next selection or by closing. */
   private autoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Last placement inputs, so the menu can be re-placed after its content grows. */
+  private lastAnchor: Box | null = null;
+  private lastBounds: Box | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -168,13 +171,26 @@ export class ContextMenu {
    * Used when the player resizes or enters fullscreen: re-rendering would throw away the
    * DOM the user may currently have focus in.
    */
-  reposition(anchor: Box, bounds: Box): void {
-    if (this.visible) this.position(anchor, bounds);
+  /**
+   * Re-places an open menu, reusing the last anchor when a fresh one is unavailable.
+   *
+   * That fallback matters: the menu grows when a result arrives, and placement computes
+   * its top from the height at that moment. If a caption change had meanwhile cleared the
+   * selection, there was no anchor to re-place against, so the menu grew downward from a
+   * fixed top — straight over the subtitle it was describing.
+   */
+  reposition(anchor?: Box, bounds?: Box): void {
+    const useAnchor = anchor ?? this.lastAnchor;
+    const useBounds = bounds ?? this.lastBounds;
+    if (this.visible && useAnchor && useBounds) this.position(useAnchor, useBounds);
   }
 
   private position(anchor: Box, bounds: Box): void {
     const element = this.element;
     if (!element) return;
+
+    this.lastAnchor = anchor;
+    this.lastBounds = bounds;
 
     // Measured while laid out but invisible, so the first painted frame is already in
     // place — the browser does not paint in the middle of this function.

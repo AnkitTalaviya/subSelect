@@ -17,8 +17,9 @@ and drives it over the DevTools Protocol. Everything else is still untested.
 
 | Site | Video found | Subtitle source | Cue text | Overlay aligns | Click | Drag | Copy | Menu | Fullscreen |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Test page — DOM captions | ✓ | ✓ dom | ✓ | ✓ 0px | ✓ | ✓ | ? | ✓ | ? |
-| Test page — TextTrack cues | ✓ | ✓ texttrack | ✓ | ✓ derived | ✓ | ✓ | ? | ✓ | ? |
+| Test page — DOM captions | ✓ | ✓ dom | ✓ | ✓ 0px | ✓ | ✓ | ✓ | ✓ | ? |
+| Test page — TextTrack cues | ✓ | ✓ texttrack | ✓ | ✓ derived | ✓ | ✓ | ✓ | ✓ | ? |
+| Test page — YouTube-style auto captions | ✓ | ✓ dom | ✓ | ✓ 0px | ✓ | ✓ | ✓ | ✓ | ? |
 | Generic HTML5 (video.js / hls.js) | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | YouTube | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | Netflix | ? | ? | ? | ? | ? | ? | ? | ? | ? |
