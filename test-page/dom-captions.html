@@ -19,7 +19,7 @@
       p.lede {
         margin: 0 0 20px;
         color: #9aa1b5;
-        max-width: 60ch;
+        max-width: 66ch;
       }
       /* A stand-in for a commercial player: video plus a sibling caption layer. */
       .player {
@@ -62,6 +62,7 @@
         display: flex;
         gap: 10px;
         align-items: center;
+        flex-wrap: wrap;
       }
       button {
         background: #1c1f2b;
@@ -77,8 +78,13 @@
         padding: 1px 5px;
         border-radius: 4px;
       }
-      /* A decorative background loop and a tiny preview, so active-video scoring has
-         something wrong to reject. */
+      kbd {
+        background: #1c1f2b;
+        border: 1px solid #2b2f3f;
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      /* A tiny decoy, so active-video scoring has something wrong to reject. */
       .decoy-tiny {
         width: 120px;
         height: 68px;
@@ -87,17 +93,50 @@
         display: block;
         background: #222;
       }
+      .diag {
+        margin-top: 18px;
+        padding: 12px 16px;
+        border: 1px solid #2b2f3f;
+        border-radius: 8px;
+        max-width: 66ch;
+      }
+      .diag h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9aa1b5;
+      }
+      .diag ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .diag li {
+        padding: 1px 0;
+      }
+      .diag .ok {
+        color: #7ee08a;
+      }
+      .diag .bad {
+        color: #ff9d9d;
+      }
+      .diag p {
+        margin: 10px 0 0;
+        color: #9aa1b5;
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
     <h1>SubSelect test — player-rendered DOM captions</h1>
     <p class="lede">
       Exercises <code>GenericDomAdapter</code>: caption text lives in the page DOM, so the
-      overlay mirrors its geometry and typography. Click a word, drag across several
-      (in either direction, and across both lines of the two-line caption), or
-      double-click for the whole caption. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>C</kbd>
-      copies, <kbd>Esc</kbd> clears. The video must keep playing throughout. Try
-      fullscreen and 200% zoom too.
+      overlay mirrors its geometry and typography. Click a word, drag across several (in
+      either direction, and across both lines of the two-line caption), or double-click for
+      the whole caption. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>C</kbd> copies,
+      <kbd>Esc</kbd> clears. The video must keep playing throughout.
     </p>
 
     <div class="player" id="player">
@@ -111,51 +150,71 @@
       <button type="button" id="toggle">Turn captions off</button>
     </div>
 
+    <section class="diag">
+      <h2>Diagnostics</h2>
+      <ul id="diag-list"></ul>
+      <p>
+        The first two lines are about this page. If they are red, the page is broken and
+        the extension never had anything to work with. If they are green but the SubSelect
+        lines are red, open the SubSelect toolbar popup — its status line says what the
+        engine sees.
+      </p>
+    </section>
+
     <video class="decoy-tiny" id="decoy" muted loop autoplay playsinline></video>
 
-    <script type="module">
-      import { cycleLines, startCanvasVideo } from './shared.js';
+    <script src="./shared.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var video = document.getElementById('video');
+        var captions = document.getElementById('captions');
+        var player = document.getElementById('player');
 
-      const video = document.getElementById('video');
-      const captions = document.getElementById('captions');
-      const player = document.getElementById('player');
+        SubSelectTest.startCanvasVideo(video);
+        SubSelectTest.startCanvasVideo(document.getElementById('decoy'), { width: 320, height: 180 });
 
-      startCanvasVideo(video);
-      startCanvasVideo(document.getElementById('decoy'), { width: 320, height: 180 });
-
-      /** Renders a caption the way a commercial player does: one block element per line. */
-      const renderCaption = (line) => {
-        captions.replaceChildren(
-          ...line.split('\n').map((text) => {
-            const outer = document.createElement('div');
+        /** Renders a caption the way a commercial player does: one block per line. */
+        function renderCaption(line) {
+          var nodes = line.split('\n').map(function (text) {
+            var outer = document.createElement('div');
             outer.className = 'timedtext-line';
-            const inner = document.createElement('span');
+            var inner = document.createElement('span');
             inner.textContent = text;
             outer.appendChild(inner);
             return outer;
-          }),
-        );
-      };
-
-      let timer = cycleLines(renderCaption);
-
-      document.getElementById('play').addEventListener('click', () => void video.play());
-      document.getElementById('fullscreen').addEventListener('click', () => {
-        void (document.fullscreenElement ? document.exitFullscreen() : player.requestFullscreen());
-      });
-
-      const toggle = document.getElementById('toggle');
-      toggle.addEventListener('click', () => {
-        if (timer) {
-          clearInterval(timer);
-          timer = null;
-          captions.replaceChildren();
-          toggle.textContent = 'Turn captions on';
-        } else {
-          timer = cycleLines(renderCaption);
-          toggle.textContent = 'Turn captions off';
+          });
+          captions.replaceChildren.apply(captions, nodes);
         }
-      });
+
+        var timer = SubSelectTest.cycleLines(renderCaption);
+
+        document.getElementById('play').addEventListener('click', function () {
+          video.play();
+        });
+
+        document.getElementById('fullscreen').addEventListener('click', function () {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else player.requestFullscreen();
+        });
+
+        var toggle = document.getElementById('toggle');
+        toggle.addEventListener('click', function () {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+            captions.replaceChildren();
+            toggle.textContent = 'Turn captions on';
+          } else {
+            timer = SubSelectTest.cycleLines(renderCaption);
+            toggle.textContent = 'Turn captions off';
+          }
+        });
+
+        SubSelectTest.startDiagnostics(document.getElementById('diag-list'), video, function () {
+          return captions.textContent.trim();
+        });
+      })();
     </script>
   </body>
 </html>

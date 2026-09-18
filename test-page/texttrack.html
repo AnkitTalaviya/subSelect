@@ -19,7 +19,7 @@
       p.lede {
         margin: 0 0 20px;
         color: #9aa1b5;
-        max-width: 60ch;
+        max-width: 66ch;
       }
       .player {
         position: relative;
@@ -55,9 +55,45 @@
         padding: 1px 5px;
         border-radius: 4px;
       }
+      kbd {
+        background: #1c1f2b;
+        border: 1px solid #2b2f3f;
+        border-radius: 4px;
+        padding: 0 4px;
+      }
       #mode {
         color: #9aa1b5;
         margin-top: 10px;
+      }
+      .diag {
+        margin-top: 18px;
+        padding: 12px 16px;
+        border: 1px solid #2b2f3f;
+        border-radius: 8px;
+        max-width: 66ch;
+      }
+      .diag h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9aa1b5;
+      }
+      .diag ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .diag .ok {
+        color: #7ee08a;
+      }
+      .diag .bad {
+        color: #ff9d9d;
+      }
+      .diag p {
+        margin: 10px 0 0;
+        color: #9aa1b5;
+        font-size: 13px;
       }
     </style>
   </head>
@@ -85,47 +121,69 @@
     </div>
     <p id="mode"></p>
 
-    <script type="module">
-      import { LINES, startCanvasVideo } from './shared.js';
+    <section class="diag">
+      <h2>Diagnostics</h2>
+      <ul id="diag-list"></ul>
+      <p>
+        If the SubSelect lines stay red while the page lines are green, open the SubSelect
+        toolbar popup — its status line says what the engine sees.
+      </p>
+    </section>
 
-      const video = document.getElementById('video');
-      const player = document.getElementById('player');
-      const modeLine = document.getElementById('mode');
+    <script src="./shared.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var video = document.getElementById('video');
+        var player = document.getElementById('player');
+        var modeLine = document.getElementById('mode');
 
-      startCanvasVideo(video);
+        SubSelectTest.startCanvasVideo(video);
 
-      const track = video.addTextTrack('subtitles', 'Deutsch', 'de');
+        var track = video.addTextTrack('subtitles', 'Deutsch', 'de');
 
-      // A MediaStream's currentTime advances from zero but cannot be seeked, so the cue
-      // schedule is laid out once, long enough to run for a few minutes.
-      const SECONDS = 3.5;
-      const CYCLES = 6;
-      for (let cycle = 0; cycle < CYCLES; cycle++) {
-        LINES.forEach((line, index) => {
-          const start = (cycle * LINES.length + index) * SECONDS;
-          track.addCue(new VTTCue(start, start + SECONDS, line));
+        // A MediaStream's currentTime advances from zero but cannot be seeked, so the cue
+        // schedule is laid out once, long enough to run for a few minutes.
+        var SECONDS = 3.5;
+        var CYCLES = 6;
+        for (var cycle = 0; cycle < CYCLES; cycle++) {
+          for (var i = 0; i < SubSelectTest.LINES.length; i++) {
+            var start = (cycle * SubSelectTest.LINES.length + i) * SECONDS;
+            track.addCue(new VTTCue(start, start + SECONDS, SubSelectTest.LINES[i]));
+          }
+        }
+
+        // The page's own intent: captions on. SubSelect flips this to `hidden` while it
+        // renders, and must restore it on teardown.
+        track.mode = 'showing';
+
+        document.getElementById('play').addEventListener('click', function () {
+          video.play();
         });
-      }
 
-      // The page's own intent: captions on. SubSelect flips this to `hidden` while it
-      // renders, and must restore it on teardown.
-      track.mode = 'showing';
+        document.getElementById('fullscreen').addEventListener('click', function () {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else player.requestFullscreen();
+        });
 
-      document.getElementById('play').addEventListener('click', () => void video.play());
-      document.getElementById('fullscreen').addEventListener('click', () => {
-        void (document.fullscreenElement ? document.exitFullscreen() : player.requestFullscreen());
-      });
+        var captionsButton = document.getElementById('captions');
+        captionsButton.addEventListener('click', function () {
+          var on = track.mode !== 'disabled';
+          track.mode = on ? 'disabled' : 'showing';
+          captionsButton.textContent = on ? 'Captions on' : 'Captions off';
+        });
 
-      const captionsButton = document.getElementById('captions');
-      captionsButton.addEventListener('click', () => {
-        const on = track.mode !== 'disabled';
-        track.mode = on ? 'disabled' : 'showing';
-        captionsButton.textContent = on ? 'Captions on' : 'Captions off';
-      });
+        document.getElementById('report').addEventListener('click', function () {
+          modeLine.textContent =
+            'track.mode = "' + track.mode + '" · activeCues = ' +
+            (track.activeCues ? track.activeCues.length : 0) +
+            ' · currentTime = ' + video.currentTime.toFixed(1);
+        });
 
-      document.getElementById('report').addEventListener('click', () => {
-        modeLine.textContent = `track.mode = "${track.mode}" · activeCues = ${track.activeCues?.length ?? 0} · currentTime = ${video.currentTime.toFixed(1)}`;
-      });
+        SubSelectTest.startDiagnostics(document.getElementById('diag-list'), video, function () {
+          return track.activeCues && track.activeCues.length > 0;
+        });
+      })();
     </script>
   </body>
 </html>

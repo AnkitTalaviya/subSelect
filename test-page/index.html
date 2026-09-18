@@ -41,6 +41,17 @@
         color: #9aa1b5;
         font-size: 14px;
       }
+      .warn {
+        border-left: 3px solid #ffbf5f;
+        background: #1a1710;
+        padding: 12px 14px;
+        border-radius: 0 6px 6px 0;
+        color: #e8dcc2;
+        font-size: 14px;
+      }
+      .warn strong {
+        color: #ffcf7a;
+      }
     </style>
   </head>
   <body>
@@ -55,14 +66,23 @@
         <li><a href="./texttrack.html">Browser-rendered TextTrack cues</a> — TextTrackAdapter</li>
       </ul>
 
-      <p class="note">
-        Opened over <code>file://</code>, these pages need <em>Allow access to file URLs</em>
-        enabled for SubSelect on <code>chrome://extensions</code>. Otherwise serve the folder
-        over HTTP and use <strong>Enable on this site</strong> in the SubSelect popup.
+      <p class="warn">
+        <strong>Opened from disk?</strong> Chrome does not run any extension on a
+        <code>file://</code> page until you switch on <em>Allow access to file URLs</em> for
+        SubSelect at <code>chrome://extensions</code> → SubSelect → Details. It is off by
+        default, and with it off nothing here will respond to a click — the extension is
+        simply not there.
       </p>
       <p class="note">
-        Run <code>localStorage.SUBSELECT_DEBUG = '1'</code> in the console and reload to see
-        the engine's detection decisions.
+        The alternative is to serve this folder over HTTP — for example
+        <code>npx serve test-page</code> — and then press <strong>Enable on this site</strong>
+        in the SubSelect toolbar popup.
+      </p>
+      <p class="note">
+        Both pages show a diagnostics panel that says whether the page is working and
+        whether SubSelect has attached. The toolbar popup also reports what the engine sees
+        on the current page. For detection logs, run
+        <code>localStorage.SUBSELECT_DEBUG = '1'</code> in the console and reload.
       </p>
     </main>
   </body>
