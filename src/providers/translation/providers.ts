@@ -196,7 +196,70 @@ class LibreTranslateProvider implements TranslationProvider {
   }
 }
 
+/**
+ * Lingva Translate — an open-source (MIT) front end for Google Translate, the same idea
+ * as Invidious for YouTube. Community-run instances, a documented REST API and no key.
+ *
+ *   GET  <instance>/api/v1/<source>/<target>/<text>  →  { "translation": "…" }
+ *
+ * Worth being straight about what this is: the instance scrapes Google Translate, so the
+ * quality is Google's and the terms question belongs to whoever runs the instance rather
+ * than being laundered away. It is here because it gives working translation with no
+ * signup, but LibreTranslate is the recommendation for a genuinely open pipeline.
+ * Public instances also come and go, which is why the endpoint is editable.
+ */
+class LingvaProvider implements TranslationProvider {
+  readonly meta: TranslationProvider['meta'];
+
+  constructor(private readonly endpoint: string) {
+    this.meta = {
+      id: 'lingva',
+      label: 'Lingva Translate',
+      remote: true,
+      ...(hostOf(endpoint) ? { endpointHost: hostOf(endpoint) } : {}),
+      ...(originOf(endpoint) ? { endpointOrigin: originOf(endpoint) } : {}),
+    };
+  }
+
+  async translate(text: string, sourceLanguage?: string, targetLanguage?: string): Promise<TranslationResult> {
+    assertLength(text);
+
+    const base = this.endpoint.replace(/\/+$/, '');
+    const source = sourceLanguage || 'auto';
+    const target = targetLanguage || 'en';
+    const url = `${base}/api/v1/${encodeURIComponent(source)}/${encodeURIComponent(target)}/${encodeURIComponent(text)}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers: { Accept: 'application/json' } });
+    } catch {
+      throw new ProviderError(
+        'network',
+        `Could not reach ${hostOf(base) ?? 'the Lingva instance'}. Public instances go down often — try another in settings.`,
+        originOf(base),
+      );
+    }
+
+    if (!response.ok) {
+      throw new ProviderError('provider', `${hostOf(base) ?? 'The Lingva instance'} returned ${response.status}.`);
+    }
+
+    const payload = (await response.json().catch(() => null)) as { translation?: unknown } | null;
+    if (typeof payload?.translation !== 'string') {
+      throw new ProviderError('provider', 'Lingva returned no translation.');
+    }
+
+    return {
+      text: payload.translation,
+      ...(sourceLanguage ? { sourceLanguage } : {}),
+      ...(targetLanguage ? { targetLanguage } : {}),
+      providerId: this.meta.id,
+    };
+  }
+}
+
 const DEEPL_FREE = 'https://api-free.deepl.com/v2/translate';
+const LINGVA_DEFAULT = 'https://lingva.ml';
 
 class DeepLProvider implements TranslationProvider {
   readonly meta: TranslationProvider['meta'];
@@ -299,6 +362,8 @@ export function createTranslationProvider(settings: Settings): TranslationProvid
       return settings.translationEndpoint
         ? new LibreTranslateProvider(settings.translationEndpoint, settings.translationApiKey)
         : null;
+    case 'lingva':
+      return new LingvaProvider(settings.translationEndpoint || LINGVA_DEFAULT);
     case 'deepl':
       return new DeepLProvider(settings.translationEndpoint || DEEPL_FREE, settings.translationApiKey);
     case 'custom':
@@ -313,6 +378,23 @@ export function createTranslationProvider(settings: Settings): TranslationProvid
 
 export const DEFAULT_ENDPOINTS: Record<string, string> = {
   libretranslate: 'https://libretranslate.com/translate',
+  lingva: LINGVA_DEFAULT,
   deepl: DEEPL_FREE,
   custom: '',
+};
+
+/**
+ * Community-run instances, offered as suggestions in settings.
+ *
+ * Both projects are self-hostable, and self-hosting is the only way to be certain an
+ * instance stays up and sees nothing it should not. These lists will go stale — they are
+ * a starting point, not a guarantee.
+ */
+export const PUBLIC_INSTANCES: Record<string, string[]> = {
+  libretranslate: [
+    'https://libretranslate.com/translate',
+    'https://translate.fedilab.app/translate',
+    'https://libretranslate.de/translate',
+  ],
+  lingva: ['https://lingva.ml', 'https://lingva.lunar.icu', 'https://translate.plausibility.cloud'],
 };

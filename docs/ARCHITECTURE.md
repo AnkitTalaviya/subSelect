@@ -370,8 +370,28 @@ assumed to be `https://<host>`, because a self-hosted LibreTranslate is commonly
 **No undocumented endpoints.** Pointing the extension at a search engine's internal
 translate URL would give free translation with no key; it is also fragile, outside the
 terms those endpoints are offered under, and a good way to get an extension pulled from
-the Web Store. Providers are on-device, or an API the user configured with their own
-credentials.
+the Web Store. Providers are on-device, open-source services with documented APIs, or an
+API the user configured with their own credentials.
+
+Where the open-source options sit:
+
+| Need | Default | Open-source options |
+| --- | --- | --- |
+| Translation | not set up | **LibreTranslate** (AGPL, self-hostable, fully open pipeline) · **Lingva** (MIT, but a Google Translate proxy) |
+| Dictionary | not set up | **Wiktionary** (CC BY-SA) · **Free Dictionary API** (MIT) |
+| Pronunciation | speech synthesis | **Wikimedia / Lingua Libre** recordings (CC BY-SA / CC0) |
+
+`Lingva` is labelled honestly in the UI: the project is open source, the translation it
+returns is Google's, and the terms question belongs to whoever runs the instance. It is
+offered because it works with no signup; LibreTranslate is the recommendation.
+
+**Pronunciation ranks candidates rather than taking the first file.** A Wiktionary page
+carries maps, portraits and icons alongside recordings, and one API call returns them all.
+`scoreRecording` rejects non-audio and wrong-word files outright, then ranks by language
+convention (`De-Berlin.ogg`, `LL-Q188 (deu)-Speaker-Berlin.wav`). Closeness is judged on
+the **last hyphen-separated segment only** — everything before it is metadata, and scoring
+the whole filename would penalise Lingua Libre for embedding a speaker name, which is
+exactly backwards since those are the best recordings available.
 
 **§18 is taken literally**: there is no built-in word list and no heuristic fallback.
 Either a provider returns definitions or the UI says lookup is not configured. A

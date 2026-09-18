@@ -1,5 +1,6 @@
 import type { FrameStatus, SubtitleSelection } from './types';
 import type { DictionaryResult, ProviderOutcome, TranslationResult } from '../providers/types';
+import type { PronunciationResult } from '../providers/pronunciation/providers';
 
 /**
  * Every message crossing a runtime boundary is a member of this union (§55). There is no
@@ -27,6 +28,7 @@ export type ExtensionMessage =
       sourceLanguage?: string;
     }
   | { type: 'LOOKUP_WORD'; text: string; language?: string }
+  | { type: 'FIND_PRONUNCIATION'; text: string; language?: string }
   | { type: 'SAVE_WORD'; word: SaveWordRequest }
   | { type: 'GET_VOCABULARY_COUNT' }
   // Content scripts cannot open the options page themselves, and cannot call
@@ -48,6 +50,7 @@ export interface MessageResponseMap {
   SELECTION_CHANGED: void;
   TRANSLATE_SELECTION: ProviderOutcome<TranslationResult>;
   LOOKUP_WORD: ProviderOutcome<DictionaryResult>;
+  FIND_PRONUNCIATION: ProviderOutcome<PronunciationResult>;
   SAVE_WORD: ProviderOutcome<{ saved: true; total: number }>;
   GET_VOCABULARY_COUNT: number;
   OPEN_OPTIONS: void;

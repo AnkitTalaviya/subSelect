@@ -194,6 +194,20 @@ code {
   cursor: default;
 }
 
+.instances {
+  margin-top: 5px;
+}
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 select,
 input[type='color'] {
   background: var(--surface-2);

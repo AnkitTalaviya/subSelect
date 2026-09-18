@@ -37,23 +37,43 @@ with, any video zoom, stretch, crop or aspect-ratio extension.
 Nothing is contacted until you set a provider up in Settings, and remote providers must be
 approved by name before a single request is made.
 
-| Translation | Needs | Sends text off device |
-| --- | --- | --- |
-| Not set up *(default)* | — | No |
-| On-device (Chrome built-in) | Recent Chrome | **No** — runs locally |
-| LibreTranslate | Instance URL (self-hosted works) | Yes |
-| DeepL | API key | Yes |
-| Custom endpoint | URL | Yes |
+| Translation | Licence | Needs | Sends text off device |
+| --- | --- | --- | --- |
+| Not set up *(default)* | — | — | No |
+| On-device (Chrome built-in) | — | Recent Chrome | **No** — runs locally |
+| [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) | AGPL-3.0 | Instance URL | Yes |
+| [Lingva Translate](https://github.com/thedaviddelta/lingva-translate) | MIT | Instance URL, no key | Yes |
+| DeepL | proprietary | API key | Yes |
+| Custom endpoint | — | URL | Yes |
 
-| Dictionary | Needs | Sends text off device |
-| --- | --- | --- |
-| Not set up *(default)* | — | No |
-| Wiktionary | Nothing — no key | Yes |
-| Custom endpoint | URL | Yes |
+**LibreTranslate is the recommendation** — it is open source end to end (Argos Translate
+models, self-hostable, no third party in the loop). **Lingva** is an open-source front end
+that scrapes Google Translate, the same idea as Invidious for YouTube: no signup and good
+quality, but the translation still comes from Google and the terms question belongs to
+whoever runs the instance. Both are volunteer-hosted; settings suggests instances and
+self-hosting is the only way to be sure one stays up.
 
-There is deliberately **no bundled "free" translation** via a search engine's internal
-endpoint. Those are undocumented, outside the terms they are offered under, and a good way
-to get an extension pulled from the Web Store.
+There is deliberately **no bundled "free" translation** hitting a search engine's internal
+endpoint directly. Those are undocumented, outside the terms they are offered under, and a
+good way to get an extension pulled from the Web Store.
+
+| Dictionary | Licence | Needs | Sends text off device |
+| --- | --- | --- | --- |
+| Not set up *(default)* | — | — | No |
+| [Wiktionary](https://en.wiktionary.org) | CC BY-SA | Nothing — no key | Yes |
+| [Free Dictionary API](https://github.com/meetDeveloper/freeDictionaryAPI) | MIT | Nothing — no key | Yes |
+| Custom endpoint | — | URL | Yes |
+
+| Pronunciation | Licence | Needs | Sends text off device |
+| --- | --- | --- | --- |
+| Speech synthesis *(default)* | — | — | No — the browser reads it |
+| [Wikimedia recordings](https://lingualibre.org) | CC BY-SA / CC0 | Nothing — no key | Yes |
+
+**Wikimedia recordings are real human voices**, not synthesis — Wiktionary audio and
+[Lingua Libre](https://lingualibre.org), the Wikimedia project where native speakers record
+their own languages. For a learner that is categorically better than TTS, which routinely
+gets German vowel length and final devoicing wrong. When no recording exists for a word,
+it falls back to speech synthesis automatically.
 
 A custom endpoint is a few lines to shim:
 
@@ -193,11 +213,14 @@ did not select. Every answer is labelled with the provider it came from.
 API keys are stored in this browser's local storage and sent only to the endpoint you
 entered them for. They never leave with an export.
 
-One caveat worth stating plainly: **Pronounce** uses the browser's own speech synthesis.
-Chrome exposes both offline (OS) voices and Google's network voices. SubSelect always
-prefers an offline voice for the subtitle language; where none exists, the browser falls
-back to an online voice, which means that word is sent to Google to be spoken. The menu
-says so at the moment it applies, and Pronounce can be turned off in Settings.
+Two caveats worth stating plainly:
+
+- **Speech synthesis.** Chrome exposes both offline (OS) voices and Google's network
+  voices. SubSelect always prefers an offline voice for the subtitle language; where none
+  exists the browser falls back to an online voice, which means that word is sent to Google
+  to be spoken. The menu says so at the moment it applies, and Pronounce can be turned off.
+- **Wikimedia recordings** are off by default and, once approved, send the selected word to
+  the relevant Wiktionary to find a recording.
 
 Where a player's subtitles cannot be reached legitimately, SubSelect says so and stops:
 
@@ -242,8 +265,9 @@ src/
 ├── providers/
 │   ├── types.ts                   provider contracts + error/result envelopes
 │   ├── url.ts                     host/origin helpers, HTML stripping
-│   ├── translation/providers.ts   on-device, LibreTranslate, DeepL, custom
-│   └── dictionary/providers.ts    Wiktionary, custom
+│   ├── translation/providers.ts   on-device, LibreTranslate, Lingva, DeepL, custom
+│   ├── dictionary/providers.ts    Wiktionary, Free Dictionary API, custom
+│   └── pronunciation/providers.ts Wikimedia / Lingua Libre recordings
 ├── vocabulary/
 │   ├── VocabularyManager.ts       local store, dedupe, search, sort
 │   ├── VocabularyExporter.ts      CSV / JSON, generated on device

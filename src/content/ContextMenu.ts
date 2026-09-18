@@ -195,7 +195,7 @@ export class ContextMenu {
         id: 'pronounce',
         label: 'Pronounce',
         icon: '🔊',
-        run: () => speak(selection.text, selection.language),
+        run: () => void this.runPronounce(selection),
       });
     }
 
@@ -264,6 +264,48 @@ export class ContextMenu {
     }
 
     this.setResult({ state: 'ok', senses: outcome.data.senses, via: outcome.data.providerId });
+  }
+
+  /**
+   * Speaks the selection, preferring a real human recording.
+   *
+   * Wikimedia's Lingua Libre recordings are native speakers, which beats synthesis
+   * outright for a learner. Everything about that path can fail — no recording for the
+   * word, no approval for the host, a page CSP that blocks cross-origin media — so speech
+   * synthesis is the floor underneath it and always runs if the audio does not.
+   */
+  private async runPronounce(selection: SubtitleSelection): Promise<void> {
+    const speakIt = (): void => {
+      if (speak(selection.text, selection.language)) this.setResult({ state: 'ok', text: 'Speaking…' });
+      else this.setResult({ state: 'error', text: 'Could not pronounce this.' });
+    };
+
+    if (this.settings.pronunciationProvider !== 'wikimedia') {
+      speakIt();
+      return;
+    }
+
+    this.setResult({ state: 'loading', text: 'Finding a recording…' });
+    const outcome = await sendMessage({
+      type: 'FIND_PRONUNCIATION',
+      text: selection.text,
+      ...(selection.language ? { language: selection.language } : {}),
+    });
+
+    if (!outcome?.ok) {
+      speakIt();
+      return;
+    }
+
+    try {
+      const audio = new Audio(outcome.data.url);
+      audio.addEventListener('error', speakIt, { once: true });
+      await audio.play();
+      this.setResult({ state: 'ok', text: outcome.data.title, via: 'Wikimedia' });
+    } catch {
+      // A page Content-Security-Policy can refuse cross-origin media even to us.
+      speakIt();
+    }
   }
 
   private async runSave(selection: SubtitleSelection): Promise<void> {

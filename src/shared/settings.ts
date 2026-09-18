@@ -27,11 +27,18 @@ export interface Settings {
   translationLanguage: LanguageCode;
 
   /** Providers (§17, §18). `none` is the default: nothing is contacted until asked for. */
-  translationProvider: 'none' | 'chrome-ondevice' | 'libretranslate' | 'deepl' | 'custom';
+  translationProvider: 'none' | 'chrome-ondevice' | 'libretranslate' | 'lingva' | 'deepl' | 'custom';
   translationEndpoint: string;
   translationApiKey: string;
-  dictionaryProvider: 'none' | 'wiktionary' | 'custom';
+  dictionaryProvider: 'none' | 'wiktionary' | 'free-dictionary' | 'custom';
   dictionaryEndpoint: string;
+  /**
+   * Where Pronounce gets its audio.
+   *
+   * `wikimedia` plays a real human recording from Wiktionary / Lingua Libre and falls back
+   * to speech synthesis when there is none; `browser` always synthesises.
+   */
+  pronunciationProvider: 'browser' | 'wikimedia';
 
   /**
    * Origins the user has agreed may receive selected text (§33).
@@ -78,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   translationApiKey: '',
   dictionaryProvider: 'none',
   dictionaryEndpoint: '',
+  pronunciationProvider: 'browser',
   consentedHosts: [],
   saveContext: true,
   clickToSelect: true,
@@ -96,8 +104,9 @@ export const DEFAULT_SETTINGS: Settings = {
 const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
   contextMenuPlacement: ['auto', 'above', 'below'],
   theme: ['system', 'light', 'dark'],
-  translationProvider: ['none', 'chrome-ondevice', 'libretranslate', 'deepl', 'custom'],
-  dictionaryProvider: ['none', 'wiktionary', 'custom'],
+  translationProvider: ['none', 'chrome-ondevice', 'libretranslate', 'lingva', 'deepl', 'custom'],
+  dictionaryProvider: ['none', 'wiktionary', 'free-dictionary', 'custom'],
+  pronunciationProvider: ['browser', 'wikimedia'],
 };
 
 /**

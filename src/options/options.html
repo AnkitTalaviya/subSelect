@@ -78,8 +78,9 @@
           <select id="translationProvider">
             <option value="none">Not set up</option>
             <option value="chrome-ondevice">On-device (Chrome built-in)</option>
-            <option value="libretranslate">LibreTranslate (online)</option>
-            <option value="deepl">DeepL (online)</option>
+            <option value="libretranslate">LibreTranslate — open source (online)</option>
+            <option value="lingva">Lingva Translate — open source (online)</option>
+            <option value="deepl">DeepL (online, key)</option>
             <option value="custom">Custom endpoint (online)</option>
           </select>
         </div>
@@ -87,6 +88,7 @@
           <div class="field-text">
             <label for="translationEndpoint">Endpoint URL</label>
             <p class="hint" id="translation-endpoint-hint"></p>
+            <p class="hint instances" id="translation-instances"></p>
           </div>
           <input type="url" id="translationEndpoint" placeholder="https://…" spellcheck="false" />
         </div>
@@ -112,7 +114,8 @@
           </div>
           <select id="dictionaryProvider">
             <option value="none">Not set up</option>
-            <option value="wiktionary">Wiktionary (online, no key)</option>
+            <option value="wiktionary">Wiktionary — open data (online, no key)</option>
+            <option value="free-dictionary">Free Dictionary API — open source (online, no key)</option>
             <option value="custom">Custom endpoint (online)</option>
           </select>
         </div>
@@ -129,6 +132,24 @@
             <p class="hint" id="dictionary-approve-hint"></p>
           </div>
           <button type="button" class="ghost" id="dictionary-approve">Approve</button>
+        </div>
+
+        <div class="field spaced">
+          <div class="field-text">
+            <label for="pronunciationProvider">Pronunciation</label>
+            <p class="hint" id="pronunciation-status"></p>
+          </div>
+          <select id="pronunciationProvider">
+            <option value="browser">Speech synthesis (offline)</option>
+            <option value="wikimedia">Wikimedia recordings — human voices (online)</option>
+          </select>
+        </div>
+        <div class="field" id="pronunciation-approve-field" hidden>
+          <div class="field-text">
+            <label id="pronunciation-approve-label">Approval</label>
+            <p class="hint" id="pronunciation-approve-hint"></p>
+          </div>
+          <button type="button" class="ghost" id="pronunciation-approve">Approve</button>
         </div>
       </section>
 

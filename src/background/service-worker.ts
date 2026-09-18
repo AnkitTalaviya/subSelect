@@ -7,6 +7,7 @@ import { COMMANDS, SESSION_KEYS } from '@shared/constants';
 import { ProviderError, type ProviderOutcome } from '../providers/types';
 import { createTranslationProvider } from '../providers/translation/providers';
 import { createDictionaryProvider } from '../providers/dictionary/providers';
+import { findPronunciation, wiktionaryHostFor } from '../providers/pronunciation/providers';
 import { getVocabularyCount, saveWord } from '../vocabulary/VocabularyManager';
 
 /**
@@ -214,10 +215,31 @@ async function lookup(message: Extract<ExtensionMessage, { type: 'LOOKUP_WORD' }
   );
 }
 
+async function pronounce(message: Extract<ExtensionMessage, { type: 'FIND_PRONUNCIATION' }>) {
+  const settings = await getSettings();
+  if (settings.pronunciationProvider !== 'wikimedia') {
+    // The caller falls back to speech synthesis, which needs no network at all.
+    return { ok: false as const, kind: 'not-configured' as const, message: 'Recordings are turned off.' };
+  }
+
+  const language = message.language || settings.subtitleLanguage;
+  const host = wiktionaryHostFor(language);
+
+  return runProvider(
+    { remote: true, label: 'Wikimedia', endpointHost: host, endpointOrigin: `https://${host}/*` },
+    settings,
+    () => findPronunciation(message.text, language),
+  );
+}
+
 chrome.runtime.onMessage.addListener((raw, sender, respond) => {
   const message = raw as ExtensionMessage;
 
   switch (message.type) {
+    case 'FIND_PRONUNCIATION':
+      void pronounce(message).then(respond);
+      return true;
+
     case 'TRANSLATE_SELECTION':
       void translate(message).then(respond);
       return true;

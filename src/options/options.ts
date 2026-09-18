@@ -4,9 +4,11 @@ import { getSettings, setSettings } from '@shared/storage';
 import { hostOf, originOf } from '../providers/url';
 import {
   DEFAULT_ENDPOINTS,
+  PUBLIC_INSTANCES,
   isOnDeviceTranslationPresent,
   onDeviceAvailability,
 } from '../providers/translation/providers';
+import { wiktionaryHostFor } from '../providers/pronunciation/providers';
 import { clearVocabulary, getVocabularyCount } from '../vocabulary/VocabularyManager';
 
 /**
@@ -45,6 +47,7 @@ const providerControls = {
   translationApiKey: el<HTMLInputElement>('translationApiKey'),
   dictionaryProvider: el<HTMLSelectElement>('dictionaryProvider'),
   dictionaryEndpoint: el<HTMLInputElement>('dictionaryEndpoint'),
+  pronunciationProvider: el<HTMLSelectElement>('pronunciationProvider'),
   saveContext: el<HTMLInputElement>('saveContext'),
 };
 
@@ -110,6 +113,7 @@ function render(settings: Settings): void {
   providerControls.translationApiKey.value = settings.translationApiKey;
   providerControls.dictionaryProvider.value = settings.dictionaryProvider;
   providerControls.dictionaryEndpoint.value = settings.dictionaryEndpoint;
+  providerControls.pronunciationProvider.value = settings.pronunciationProvider;
   providerControls.saveContext.checked = settings.saveContext;
 
   applyTheme(settings.theme);
@@ -149,11 +153,23 @@ function translationTarget(settings: Settings): ProviderTarget | null {
 }
 
 function dictionaryTarget(settings: Settings): ProviderTarget | null {
-  if (settings.dictionaryProvider === 'wiktionary') {
-    return { host: 'en.wiktionary.org', origin: 'https://en.wiktionary.org/*' };
+  switch (settings.dictionaryProvider) {
+    case 'wiktionary':
+      return { host: 'en.wiktionary.org', origin: 'https://en.wiktionary.org/*' };
+    case 'free-dictionary':
+      return { host: 'api.dictionaryapi.dev', origin: 'https://api.dictionaryapi.dev/*' };
+    case 'custom':
+      return targetFor(settings.dictionaryEndpoint);
+    default:
+      return null;
   }
-  if (settings.dictionaryProvider === 'custom') return targetFor(settings.dictionaryEndpoint);
-  return null;
+}
+
+function pronunciationTarget(settings: Settings): ProviderTarget | null {
+  if (settings.pronunciationProvider !== 'wikimedia') return null;
+  // Recordings live on the Wiktionary edition for the subtitle language.
+  const host = wiktionaryHostFor(settings.subtitleLanguage);
+  return { host, origin: `https://${host}/*` };
 }
 
 /**
@@ -165,7 +181,7 @@ function dictionaryTarget(settings: Settings): ProviderTarget | null {
  * that can call `chrome.permissions.request` — a content script cannot.
  */
 async function renderApproval(
-  kind: 'translation' | 'dictionary',
+  kind: 'translation' | 'dictionary' | 'pronunciation',
   target: ProviderTarget | null,
   settings: Settings,
 ): Promise<void> {
@@ -208,7 +224,8 @@ async function renderApproval(
 async function renderProviders(settings: Settings): Promise<void> {
   const provider = settings.translationProvider;
 
-  el<HTMLElement>('translation-endpoint-field').hidden = !['libretranslate', 'custom', 'deepl'].includes(provider);
+  el<HTMLElement>('translation-endpoint-field').hidden = !['libretranslate', 'lingva', 'custom', 'deepl'].includes(provider);
+  // Lingva takes no key.
   el<HTMLElement>('translation-key-field').hidden = !['libretranslate', 'custom', 'deepl'].includes(provider);
 
   const endpointHint = el<HTMLElement>('translation-endpoint-hint');
@@ -217,7 +234,27 @@ async function renderProviders(settings: Settings): Promise<void> {
       ? 'Receives { text, source, target, context }, must return { "translation": "…" }.'
       : provider === 'deepl'
         ? 'Leave blank for DeepL’s free API endpoint.'
-        : 'Your LibreTranslate instance’s /translate URL.';
+        : provider === 'lingva'
+          ? 'A Lingva instance’s base URL. Public instances are volunteer-run and often down.'
+          : 'Your LibreTranslate instance’s /translate URL. Self-hosting is the reliable option.';
+
+  // Suggested instances, as one-click buttons — these projects are self-hostable and the
+  // public lists go stale, so they are a starting point rather than a promise.
+  const instances = el<HTMLElement>('translation-instances');
+  const suggestions = PUBLIC_INSTANCES[provider] ?? [];
+  instances.replaceChildren();
+  if (suggestions.length > 0) {
+    instances.appendChild(document.createTextNode('Try: '));
+    suggestions.forEach((url, index) => {
+      if (index > 0) instances.appendChild(document.createTextNode(' · '));
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'linkish';
+      button.textContent = url.replace(/^https?:\/\//, '');
+      button.addEventListener('click', () => void save({ translationEndpoint: url }));
+      instances.appendChild(button);
+    });
+  }
 
   const status = el<HTMLElement>('translation-status');
   if (provider === 'none') {
@@ -247,8 +284,14 @@ async function renderProviders(settings: Settings): Promise<void> {
       ? 'Definition will say it is not set up.'
       : 'Online provider. The selected word is sent to it when you press Definition.';
 
+  el<HTMLElement>('pronunciation-status').textContent =
+    settings.pronunciationProvider === 'wikimedia'
+      ? 'Plays a native-speaker recording from Wiktionary / Lingua Libre, and falls back to speech synthesis when there is none.'
+      : 'Your browser reads the word aloud. Works offline.';
+
   await renderApproval('translation', translationTarget(settings), settings);
   await renderApproval('dictionary', dictionaryTarget(settings), settings);
+  await renderApproval('pronunciation', pronunciationTarget(settings), settings);
 }
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -325,6 +368,12 @@ providerControls.dictionaryProvider.addEventListener('change', () => {
 
 providerControls.dictionaryEndpoint.addEventListener('change', () => {
   void save({ dictionaryEndpoint: providerControls.dictionaryEndpoint.value.trim() });
+});
+
+providerControls.pronunciationProvider.addEventListener('change', () => {
+  void save({
+    pronunciationProvider: providerControls.pronunciationProvider.value as Settings['pronunciationProvider'],
+  });
 });
 
 el<HTMLButtonElement>('open-vocabulary').addEventListener('click', () => {

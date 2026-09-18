@@ -124,6 +124,86 @@ class WiktionaryProvider implements DictionaryProvider {
 }
 
 /**
+ * The Free Dictionary API — the open-source project behind dictionaryapi.dev
+ * (MIT, github.com/meetDeveloper/freeDictionaryAPI). No key, no signup.
+ *
+ * Richer than Wiktionary for the languages it covers: definitions carry a part of speech,
+ * examples, synonyms and often a pronunciation recording. It covers fewer languages,
+ * which is why Wiktionary remains the default for German.
+ */
+const FREE_DICTIONARY_ENDPOINT = 'https://api.dictionaryapi.dev/api/v2/entries/';
+export const FREE_DICTIONARY_ORIGIN = 'https://api.dictionaryapi.dev/*';
+
+interface FreeDictionaryEntry {
+  word?: string;
+  phonetic?: string;
+  meanings?: Array<{
+    partOfSpeech?: string;
+    definitions?: Array<{ definition?: string; example?: string }>;
+    synonyms?: string[];
+  }>;
+}
+
+class FreeDictionaryProvider implements DictionaryProvider {
+  readonly meta = {
+    id: 'free-dictionary',
+    label: 'Free Dictionary API',
+    remote: true,
+    endpointHost: 'api.dictionaryapi.dev',
+    endpointOrigin: FREE_DICTIONARY_ORIGIN,
+  };
+
+  async lookup(text: string, language?: string): Promise<DictionaryResult> {
+    const headword = text.trim();
+    if (!headword) throw new ProviderError('provider', 'Nothing to look up.');
+
+    const code = (language ?? 'en').split('-')[0] ?? 'en';
+    const url = `${FREE_DICTIONARY_ENDPOINT}${encodeURIComponent(code)}/${encodeURIComponent(headword)}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers: { Accept: 'application/json' } });
+    } catch {
+      throw new ProviderError('network', 'Could not reach api.dictionaryapi.dev.', FREE_DICTIONARY_ORIGIN);
+    }
+
+    if (response.status === 404) {
+      throw new ProviderError('provider', `No entry for "${headword}" in this dictionary.`);
+    }
+    if (!response.ok) {
+      throw new ProviderError('provider', `The dictionary returned ${response.status}.`);
+    }
+
+    const payload = (await response.json().catch(() => null)) as FreeDictionaryEntry[] | null;
+    if (!Array.isArray(payload)) {
+      throw new ProviderError('provider', 'The dictionary returned an unreadable response.');
+    }
+
+    const senses: DictionarySense[] = [];
+    for (const entry of payload) {
+      for (const meaning of entry.meanings ?? []) {
+        for (const definition of meaning.definitions ?? []) {
+          if (!definition.definition) continue;
+          const sense: DictionarySense = { definition: definition.definition };
+          if (meaning.partOfSpeech) sense.partOfSpeech = meaning.partOfSpeech;
+          if (definition.example) sense.examples = [definition.example];
+          senses.push(sense);
+          if (senses.length >= 6) break;
+        }
+        if (senses.length >= 6) break;
+      }
+      if (senses.length >= 6) break;
+    }
+
+    if (senses.length === 0) {
+      throw new ProviderError('provider', `No definitions for "${headword}".`);
+    }
+
+    return { headword, senses, providerId: this.meta.id };
+  }
+}
+
+/**
  * A user-supplied endpoint:
  *
  *   GET   <endpoint>?word=<word>&language=<code>
@@ -174,6 +254,8 @@ export function createDictionaryProvider(settings: Settings): DictionaryProvider
   switch (settings.dictionaryProvider) {
     case 'wiktionary':
       return new WiktionaryProvider();
+    case 'free-dictionary':
+      return new FreeDictionaryProvider();
     case 'custom':
       return settings.dictionaryEndpoint ? new CustomDictionaryProvider(settings.dictionaryEndpoint) : null;
     case 'none':
