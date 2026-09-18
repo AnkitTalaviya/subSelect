@@ -160,6 +160,26 @@ export class SubtitleEngine {
     if (!this.pausedByUs) return;
     this.pausedByUs = false;
 
+    /*
+     * Never start playback in a tab the viewer is not looking at.
+     *
+     * Dismissing a selection is a gesture in this tab, so that path is always visible. The
+     * teardown path is not: `binding.dispose` resumes so a video is never left paused
+     * because SubSelect went away, and the engine is torn down by anything that writes
+     * `enabled: false` — the Alt+Shift+S shortcut, the popup switch, the settings page —
+     * none of which has to happen in this tab. That made turning the feature off from
+     * somewhere else start a video playing out of a background tab, which is the worst
+     * thing a muted, unattended tab can do.
+     *
+     * The claim is still released, so SubSelect is not holding the video either. Coming
+     * back to a paused video costs one press of play; coming back to sound already playing
+     * costs finding which of thirty tabs it is.
+     */
+    if (document.visibilityState !== 'visible') {
+      log.debug('not resuming: this tab is in the background');
+      return;
+    }
+
     try {
       // Resuming follows a click or a key press, so autoplay policy allows it; a rejected
       // promise would only mean the player refused, which is the player's call to make.
