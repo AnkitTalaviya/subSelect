@@ -957,6 +957,80 @@ try {
         fresh.play();
         return 1})()`),
     );
+
+    /*
+     * The viewer switches the site's own captions off and on again.
+     *
+     * Reported twice from real use: after toggling CC the words stopped being clickable
+     * until the extension was toggled off and on, and sometimes until the page was
+     * reloaded. Both had causes the recovery checks above cannot reach, because nothing is
+     * ever disconnected — see the two cases below.
+     */
+    if (mirrored) {
+      /*
+       * On a fresh load. The recovery checks above deliberately clone and rebuild the
+       * player, which leaves duplicate caption nodes in the DOM — asserting about "the"
+       * caption container afterwards tests the wreckage rather than the behaviour.
+       */
+      await cdp.send('Page.navigate', { url: `https://www.youtube.com/${PAGE}` });
+      await sleep(3500);
+      let ready = 0;
+      for (let i = 0; i < 24 && ready === 0; i++) {
+        await sleep(500);
+        ready = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+      }
+      check('reloaded for the caption checks', ready > 0, `${ready} words`);
+
+      await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]')
+        ?? document.querySelector('.timedtext, #captions, .captions-text');
+        window.__cap = h; return !!h})()`);
+
+      // 1. Captions off, then on again.
+      await cdp.eval(`(()=>{(window.__ssPageTimers ?? []).forEach(clearInterval);
+        window.__say=function(t){const d=document.createElement('div');
+          d.className='timedtext-line'; const s=document.createElement('span');
+          s.textContent=t; d.appendChild(s); window.__cap.replaceChildren(d)};
+        window.__cap.replaceChildren(); return 1})()`);
+      await sleep(1500);
+      const gone = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+      check('captions off clears the overlay', gone === 0, `${gone} words left behind`);
+
+      await cdp.eval(`window.__say('Ich möchte morgen nach Berlin fahren.'); 1`);
+      let back = 0;
+      for (let i = 0; i < 20 && back === 0; i++) {
+        await sleep(400);
+        back = await cdp.eval('document.querySelectorAll(".subselect-word").length');
+      }
+      check('captions on again brings the overlay back', back > 0, `${back} words`);
+
+      /*
+       * 2. The captions move to a NEW element and the old one is left in place, empty.
+       *
+       * Nothing disconnects, so `isConnected` reports a perfectly healthy binding while the
+       * player has started writing somewhere else. This is the state that looked like "it
+       * is on but does nothing" and needed a reload.
+       */
+      await cdp.eval(`(()=>{
+        const old = window.__cap;
+        const fresh = document.createElement('div');
+        fresh.className = old.className;
+        old.parentElement.appendChild(fresh);
+        old.replaceChildren();
+        window.__cap = fresh;
+        window.__say('Das ist etwas völlig anderes.');
+        return 1})()`);
+
+      let followed = '';
+      for (let i = 0; i < 25; i++) {
+        await sleep(400);
+        followed = await cdp.eval(
+          `document.querySelector('.subselect-layer')?.textContent?.trim() ?? ''`,
+        );
+        if (/völlig anderes/.test(followed)) break;
+      }
+      check('follows the captions when they move to another element',
+        /völlig anderes/.test(followed), followed ? followed.slice(0, 40) : 'overlay stayed empty');
+    }
   }
 
   if (cdp.logs.length) console.log('\npage console:\n  ' + cdp.logs.slice(-12).join('\n  '));

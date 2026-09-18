@@ -141,16 +141,47 @@ export class TextTrackAdapter implements SubtitleAdapter {
     bindTrack();
     this.disposer.add(() => unbindTrack?.());
 
-    // The user can switch caption language mid-playback, which replaces the active track.
+    /*
+     * Follows the viewer switching captions: another language, off, or back on.
+     *
+     * The "same track" case is not a no-op, which is what this used to assume. Two things
+     * can change without the track object changing at all:
+     *
+     *  - The viewer turns captions **off**. The player sets `mode = 'disabled'`, cues stop
+     *    firing, and the overlay is left frozen on whatever was last on screen.
+     *  - The viewer turns them **back on**. The player sets `mode = 'showing'`, which undoes
+     *    our takeover — so the browser starts drawing its own captions over the top of ours
+     *    and nothing re-hides them.
+     *
+     * Both were invisible here because `findShowingTrack` returned our own track whatever
+     * its mode, so `next === this.track` and this returned early every time. The feature
+     * then looked dead until the extension was toggled off and on.
+     */
     const onTrackListChange = (): void => {
       const next = this.findShowingTrack(this.context?.video);
-      if (next === this.track) return;
+
+      if (next === this.track) {
+        if (!next) return;
+        // Captions were switched on again over a track we already hold: take it back,
+        // otherwise the player renders its captions and ours at the same time.
+        if (next.mode === 'showing') {
+          try {
+            next.mode = 'hidden';
+            log.debug('re-hid the track after the player turned captions back on');
+          } catch (error) {
+            log.warn('could not re-hide the track', error);
+          }
+        }
+        return;
+      }
 
       unbindTrack?.();
       unbindTrack = null;
       this.release();
       this.takeOver(next);
       bindTrack();
+      // With no track this emits a null cue, which is what clears the overlay when the
+      // viewer turns captions off.
       emit(true);
     };
 
@@ -184,9 +215,18 @@ export class TextTrackAdapter implements SubtitleAdapter {
 
   /** Hands the track back exactly as we found it (§58). */
   private release(): void {
-    if (this.track && this.originalMode) {
+    const track = this.track;
+    if (track && this.originalMode) {
       try {
-        this.track.mode = this.originalMode;
+        /*
+         * Only a track still in the state we left it in is ours to hand back.
+         *
+         * We set `hidden`; anything else means the player or the viewer has since taken it
+         * back. Restoring the remembered `showing` over their `disabled` would switch
+         * captions on again moments after they turned them off — the extension overruling
+         * the person watching, which is the one thing it must never do (§58).
+         */
+        if (track.mode === 'hidden') track.mode = this.originalMode;
       } catch {
         // The track may already be gone with the media element; nothing to restore.
       }
@@ -198,12 +238,22 @@ export class TextTrackAdapter implements SubtitleAdapter {
   private findShowingTrack(video: HTMLVideoElement | undefined): TextTrack | null {
     if (!video) return null;
 
-    // A track we have already taken over reports `hidden`, so it has to be recognised too.
     for (const track of video.textTracks) {
-      if (track === this.track) return track;
       if (!SUBTITLE_KINDS.has(track.kind)) continue;
-      if (track.mode !== 'showing') continue;
-      return track;
+
+      /*
+       * A track we have already taken over reports `hidden` because we set it, so it has to
+       * be recognised as still on — but only while it is not `disabled`. That exception
+       * used to come first and unconditionally, which meant a track the viewer had switched
+       * off still counted as showing: captions were off, cues had stopped, and this kept
+       * answering "that one, still". Nothing downstream could see the change.
+       */
+      if (track === this.track) {
+        if (track.mode !== 'disabled') return track;
+        continue;
+      }
+
+      if (track.mode === 'showing') return track;
     }
 
     return null;

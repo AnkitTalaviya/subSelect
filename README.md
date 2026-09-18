@@ -380,6 +380,23 @@ switches, and re-attaches by itself when a player changes episode, seeks, rebuil
 replaces its video element, or removes the overlay during a re-render — and after a burst of
 its own errors. No reloading, no toggling it off and on.
 
+**Switching the site's own captions off and on** is part of that, and it is subtler than it
+looks. Two cases used to end with the extension sitting there doing nothing:
+
+* A `<track>` the viewer switches off goes to `mode: 'disabled'`, and switching it back on
+  resets it to `showing` — which undoes SubSelect's takeover, so the browser draws its own
+  captions over the overlay. Track selection now distinguishes "hidden because we hid it"
+  from "disabled because the viewer turned it off", and re-takes a track the player switched
+  back on. A track whose mode has moved on is never restored to what we remembered, either:
+  handing back `showing` over the viewer's `disabled` would switch captions on against them.
+* A player that re-renders can leave its old caption element in place and **empty** and start
+  writing into a new one. Nothing disconnects, so a liveness check based on `isConnected`
+  sees a perfectly healthy binding. Detection now keys on whether the element still carries
+  caption text, and re-scans — cheaply, and only while no caption is present, so the hot path
+  where cues are arriving is untouched.
+
+Both are covered by `npm run verify:browser`.
+
 Switching tabs costs nothing: nothing is torn down, so a video paused to read a word is
 still paused when you come back, with the word still selected.
 

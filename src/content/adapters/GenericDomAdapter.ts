@@ -184,9 +184,22 @@ export class GenericDomAdapter implements SubtitleAdapter {
     }, 50);
     this.disposer.add(() => onParent.cancel());
 
-    // Widest and slowest: catches captions being switched on long after we attached.
+    /*
+     * Widest and slowest: catches captions being switched on long after we attached, and
+     * captions *moving* to a different element.
+     *
+     * The guard is "still carrying text", not "still in the document". A player that
+     * re-renders can leave its old caption node in place and empty and start writing into
+     * a new one — nothing disconnects, so an isConnected check sees a healthy binding while
+     * the captions have moved on without it. That is the state where the extension looks
+     * on but does nothing until the page is reloaded.
+     *
+     * Reading `textContent` on one element is cheap, and the scan behind `rebind` only
+     * happens while our container has no caption in it — never on the hot path where cues
+     * are arriving normally.
+     */
     const onRoot = throttleTrailing(() => {
-      if (this.container?.isConnected) return;
+      if (this.hasCaptionText()) return;
       this.rebind(emit);
     }, 250);
     this.disposer.add(() => onRoot.cancel());
@@ -220,13 +233,36 @@ export class GenericDomAdapter implements SubtitleAdapter {
     if (parent) this.parentObserver?.observe(parent, { childList: true });
   }
 
+  /** Whether the container we hold is still the one the player is writing captions into. */
+  private hasCaptionText(): boolean {
+    const container = this.container;
+    if (!container?.isConnected) return false;
+    return extractCaptionText(container).trim().length > 0;
+  }
+
   private rebind(emit: (force?: boolean) => void): void {
     if (!this.context) return;
 
     this.textObserver?.disconnect();
     this.parentObserver?.disconnect();
 
-    const next = this.resolveContainer(this.context);
+    // A fresh scan, never the memo: the memo exists so `canHandle` and `attach` cost one
+    // scan between them, and it is served as long as the cached element is *connected* —
+    // which is exactly the case this is trying to get out of.
+    const next = this.resolveContainer(this.context, true);
+
+    /*
+     * A scan that finds nothing must not take a live container away.
+     *
+     * Between two cues the caption element is legitimately empty, and an empty element
+     * scores zero — so the scan comes back with nothing. Dropping our container there would
+     * unbind us from the very element the next cue is about to arrive in.
+     */
+    if (!next && this.container?.isConnected) {
+      this.bindObservers();
+      return;
+    }
+
     if (next === this.container) {
       this.bindObservers();
       return;
@@ -283,10 +319,11 @@ export class GenericDomAdapter implements SubtitleAdapter {
   }
 
   /** Scores every candidate in and around the player and returns the best, or null. */
-  private resolveContainer(context: AdapterContext): HTMLElement | null {
+  private resolveContainer(context: AdapterContext, fresh = false): HTMLElement | null {
     // Only a live container is served from the memo. A cached *null* must never be, or
-    // captions switched on after we gave up would never be picked up.
-    if (this.resolved?.context === context && this.resolved.container?.isConnected) {
+    // captions switched on after we gave up would never be picked up — and `fresh` skips
+    // it entirely for callers re-detecting after the captions moved.
+    if (!fresh && this.resolved?.context === context && this.resolved.container?.isConnected) {
       return this.resolved.container;
     }
 
