@@ -217,7 +217,14 @@ async function wordDetails(message: Extract<ExtensionMessage, { type: 'GET_WORD_
     runChain(
       createTranslationChain(settings),
       (provider: TranslationProvider) =>
-        provider.translate(message.text, language, settings.translationLanguage, message.context),
+        // The headword, not the raw slice: translating "entscheiden." returned "decide."
+        // with the full stop carried through. For a phrase the two are the same string.
+        provider.translate(
+          message.lookupText || message.text,
+          language,
+          settings.translationLanguage,
+          message.context,
+        ),
       { gate: gated, emptyMessage: 'Translation is turned off in settings.' },
     ),
     runChain(

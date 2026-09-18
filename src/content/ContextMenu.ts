@@ -73,6 +73,26 @@ function icon(id: string): SVGElement {
   return svg;
 }
 
+/**
+ * The one line that answers "what does this mean?".
+ *
+ * For a single word the dictionary outranks the machine translation. Translation services
+ * are built for sentences and are unreliable on bare words — MyMemory returns "do" for
+ * "entscheiden" and leaves "allerdings" untranslated, while Wiktionary has "to decide, to
+ * make a decision". Putting the machine answer in the largest type gave the most prominent
+ * place to the least reliable source. A phrase is the other way round: dictionaries do not
+ * carry phrases, so the translation leads.
+ *
+ * The usage note is trimmed off the headline; the sense list still carries it in full.
+ */
+export function headlineFor(details: WordDetails): { text?: string; fromDictionary: boolean } {
+  const singleWord = !/\s/.test(details.headword.trim());
+  const lead = singleWord ? details.senses?.[0]?.definition : undefined;
+
+  if (lead) return { text: lead.split(/\s+\[/)[0]!.trim(), fromDictionary: true };
+  return { ...(details.translation ? { text: details.translation.text } : {}), fromDictionary: false };
+}
+
 function labelSpan(text: string): HTMLElement {
   const span = document.createElement('span');
   span.textContent = text;
@@ -374,8 +394,16 @@ export class ContextMenu {
       return;
     }
 
-    this.lastTranslation = outcome.data.translation?.text ?? null;
-    this.setResult({ state: 'ok', details: outcome.data }, token);
+    /*
+     * Save keeps what the panel showed, not what the machine returned. For a single word
+     * the headline is the dictionary gloss, so saving the machine translation would put a
+     * different — and often wrong — answer in the vocabulary list from the one the user
+     * just read.
+     */
+    const details = outcome.data;
+    this.lastTranslation = headlineFor(details).text ?? null;
+
+    this.setResult({ state: 'ok', details }, token);
   }
 
   private async runPronounce(selection: SubtitleSelection): Promise<void> {
@@ -563,11 +591,25 @@ export class ContextMenu {
       panel.appendChild(line);
     }
 
-    if (details.translation) {
-      const translation = document.createElement('p');
-      translation.className = CLASS.menuTranslation;
-      translation.textContent = details.translation.text;
-      panel.appendChild(translation);
+    /*
+     * For a single word the dictionary outranks the machine translation.
+     *
+     * Translation services are built for sentences and are unreliable on bare words — for
+     * "entscheiden" MyMemory returns "do", and "allerdings" comes back untranslated — while
+     * Wiktionary has "to decide, to make a decision". Showing the machine answer in the
+     * largest type put the least reliable thing in the most prominent place. A phrase is
+     * the other way round: dictionaries do not carry phrases, so the translation leads.
+     *
+     * The usage note is trimmed off the headline; it is still there in the sense list.
+     */
+    const senses = details.senses ?? [];
+    const { text: headline, fromDictionary } = headlineFor(details);
+
+    if (headline) {
+      const primary = document.createElement('p');
+      primary.className = CLASS.menuTranslation;
+      primary.textContent = headline;
+      panel.appendChild(primary);
     }
 
     if (details.inflections) {
@@ -578,9 +620,9 @@ export class ContextMenu {
       );
     }
 
-    if (details.senses && details.senses.length > 0) {
-      panel.appendChild(this.renderSenses(details.senses));
-    }
+    // The lead sense is already the headline, so the list carries what it does not.
+    const remaining = fromDictionary ? senses.slice(1) : senses;
+    if (remaining.length > 0) panel.appendChild(this.renderSenses(remaining));
 
     for (const [label, words] of [
       ['Synonyms', details.synonyms],

@@ -38,6 +38,10 @@ const ENTITIES: Record<string, string> = {
  */
 export function stripHtml(html: string): string {
   return html
+    // Elements whose *content* is not prose. Stripping only the tags leaves the stylesheet
+    // body behind, and Wiktionary inlines one into its definitions — so a perfectly good
+    // gloss arrived with ".mw-parser-output .deprecated{color:…}" spliced into the middle.
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<[^>]*>/g, '')
     .replace(/&(#?\w+);/g, (match, entity: string) => {
       const named = ENTITIES[entity.toLowerCase()];

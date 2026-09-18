@@ -103,9 +103,9 @@ export function parseTemplateParams(body: string): Record<string, string> {
 export function cleanWikitext(value: string): string {
   return (
     value
-      // References go entirely, content included — stripping only the tags would splice
-      // citation text into the middle of a definition.
-      .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '')
+      // Elements whose content is not prose go entirely — stripping only the tags would
+      // splice citation text, or a stylesheet body, into the middle of a definition.
+      .replace(/<(ref|style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
       .replace(/<ref[^>]*\/>/gi, '')
       .replace(/\[\[(?:[^\]|]*\|)?([^\]|]*)\]\]/g, '$1')
       .replace(/\{\{[^{}]*\}\}/g, '')

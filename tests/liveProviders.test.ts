@@ -80,6 +80,35 @@ describe.skipIf(!live)('live dictionary', () => {
   }, 30_000);
 });
 
+describe.skipIf(!live)('translation spot-check', () => {
+  /*
+   * Logs what each remote translator returns for single words, which is what the product
+   * asks for most. Deliberately assertion-free: translation quality is a judgement, not a
+   * pass/fail, and this exists so the chain order is chosen on evidence rather than
+   * assumption. MyMemory is a translation *memory*, and its single-word matches can be
+   * poor — it returned "do" for "entscheiden".
+   */
+  it('reports single-word quality per provider', async () => {
+    const words = ['entscheiden', 'Feuerwerk', 'allerdings', 'obwohl', 'Größe'];
+    const chain = createTranslationChain(settings({ translationProvider: 'auto' }))
+      .filter((p) => p.meta.remote);
+
+    for (const provider of chain) {
+      const line: string[] = [];
+      for (const word of words) {
+        try {
+          const result = await provider.translate(word, 'de', 'en');
+          line.push(`${word} → ${result.text}`);
+        } catch (error) {
+          line.push(`${word} → (${(error as Error).message.slice(0, 40)})`);
+        }
+      }
+      console.log(`  ${provider.meta.label.padEnd(14)} ${line.join(' · ')}`);
+    }
+    expect(chain.length).toBeGreaterThan(0);
+  }, 60_000);
+});
+
 describe.skipIf(!live)('live grammar', () => {
   it('gets the article and plural for a German noun', async () => {
     const grammar = await fetchGrammar('Feuerwerk', 'de');
