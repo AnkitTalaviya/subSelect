@@ -39,6 +39,9 @@ import { Disposer } from './dom';
  * the cue by offset instead.
  */
 
+/** Why a selection ended. */
+export type ClearReason = 'user' | 'cue-change';
+
 interface DragState {
   pointerId: number;
   captureTarget: HTMLElement;
@@ -73,7 +76,7 @@ export class SelectionManager {
   constructor(
     private readonly renderer: OverlayRenderer,
     private readonly getCue: () => SubtitleCue | null,
-    private readonly onSelection: (selection: SubtitleSelection | null) => void,
+    private readonly onSelection: (selection: SubtitleSelection | null, reason: ClearReason) => void,
     settings: Settings,
   ) {
     this.settings = settings;
@@ -162,14 +165,34 @@ export class SelectionManager {
     return this.current;
   }
 
-  clear(): void {
+  /**
+   * Drops the selection.
+   *
+   * `reason` matters downstream: a caption changing takes the highlighted words off the
+   * screen, but it is not the user asking to be rid of the menu they just opened. See
+   * SubtitleEngine.publishSelection.
+   */
+  clear(reason: ClearReason = 'user'): void {
     this.cancelDrag();
     if (!this.current) return;
 
     this.current = null;
     this.renderer.setSelected([]);
     this.clearNativeSelection();
-    this.onSelection(null);
+    this.onSelection(null, reason);
+  }
+
+  /** Copies arbitrary text, for the menu acting on its own captured selection. */
+  async copyText(text: string): Promise<boolean> {
+    if (!text) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.renderer.flashNotice('Copied ✓');
+      return true;
+    } catch (error) {
+      log.warn('clipboard write failed', error);
+      return false;
+    }
   }
 
   /** Builds and publishes a selection from a set of words in the current cue. */
@@ -199,7 +222,7 @@ export class SelectionManager {
     // Mid-drag the highlight updates on every word, but subscribers do not: a six-word
     // drag would otherwise send six messages to the service worker for five throwaway
     // intermediate states. The final selection is published once, on pointerup.
-    if (!this.drag?.moved) this.onSelection(selection);
+    if (!this.drag?.moved) this.onSelection(selection, 'user');
   }
 
   /**
@@ -340,7 +363,7 @@ export class SelectionManager {
     }
 
     // Publish the one selection the gesture actually produced.
-    if (wasDrag && this.current) this.onSelection(this.current);
+    if (wasDrag && this.current) this.onSelection(this.current, 'user');
 
     // Mirror once, at the end of the gesture: doing it per move would fire a
     // selectionchange storm for no visible benefit, since the native highlight is hidden.

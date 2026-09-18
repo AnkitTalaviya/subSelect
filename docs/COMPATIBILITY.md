@@ -10,11 +10,15 @@ file records measurements only.
 Legend: `✓` verified working · `✗` verified broken · `—` not applicable ·
 `?` **not tested**
 
-## Status at Phase 3
+## Status at Phase 4
+
+Verified rows come from `npm run verify:browser`, which loads `dist/` into a real Chromium
+and drives it over the DevTools Protocol. Everything else is still untested.
 
 | Site | Video found | Subtitle source | Cue text | Overlay aligns | Click | Drag | Copy | Menu | Fullscreen |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Local `<video>` + `<track>` (test page) | ? | ? | ? | ? | ? | ? | ? | ? | ? |
+| Test page — DOM captions | ✓ | ✓ dom | ✓ | ✓ 0px | ✓ | ✓ | ? | ✓ | ? |
+| Test page — TextTrack cues | ✓ | ✓ texttrack | ✓ | ✓ derived | ✓ | ✓ | ? | ✓ | ? |
 | Generic HTML5 (video.js / hls.js) | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | YouTube | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | Netflix | ? | ? | ? | ? | ? | ? | ? | ? | ? |
@@ -28,6 +32,27 @@ Legend: `✓` verified working · `✗` verified broken · `—` not applicable 
 | Max | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | Apple TV+ | ? | ? | ? | ? | ? | ? | ? | ? | ? |
 | Plex | ? | ? | ? | ? | ? | ? | ? | ? | ? |
+
+What the automated run asserts, on both subtitle sources: the overlay renders; it aligns
+with the player's caption to the pixel (mirror mode) or lands in the lower video (derived
+mode); the site's own caption is suppressed so text is never doubled; a click selects
+exactly one word without pausing the video; a drag selects a phrase; the menu opens with
+all five actions; a caption change clears the highlight but leaves the menu usable; and
+Escape clears both.
+
+Copy and fullscreen are not automated — the clipboard and the fullscreen transition both
+need a real user gesture that the protocol cannot fake convincingly.
+
+### Running it
+
+```bash
+npm run build
+npm run verify:browser [dom-captions.html|texttrack.html]
+```
+
+It uses **Edge**, not Chrome: branded Chrome stable refuses to side-load an unpacked
+extension. Point `SUBSELECT_BROWSER` at any other Chromium to override. A screenshot lands
+at `verify.png` — look at it, an assertion passing on a blank frame proves nothing.
 
 ## How to test a site
 

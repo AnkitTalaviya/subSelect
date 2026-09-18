@@ -102,8 +102,10 @@ The shortcut defaults to `Alt+Shift+S`, not the brief's `Alt+S`. Extension comma
 intercept the key before the page sees it, so plain `Alt+S` would silently break any site
 that uses it. Rebind it at `chrome://extensions/shortcuts`.
 
-Per-site support is **not verified yet**. [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)
-starts as all-unknown on purpose, and is filled in by measurement, not prediction.
+Both subtitle sources are **verified end to end in a real browser** by
+`npm run verify:browser` — overlay alignment, click, drag, menu, caption changes and
+Escape. Per-site support beyond the test pages is still unmeasured;
+[`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) records measurements, not predictions.
 
 Read before contributing:
 
@@ -138,6 +140,7 @@ Scripts:
 | `npm run package` | build, then zip `dist/` to `subselect-<version>.zip` for sharing or Web Store upload |
 | `npm run dev` | same as build, in watch mode |
 | `npm test` | unit tests (Vitest) |
+| `npm run verify:browser` | loads `dist/` into a real Chromium and drives it — click, drag, menu, Escape |
 | `npm run typecheck` | `tsc --noEmit` over the extension and the build config |
 | `npm run check` | typecheck + tests |
 

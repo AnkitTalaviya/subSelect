@@ -274,6 +274,8 @@
 .subselect-menu {
   --ss-menu-x: 0px;
   --ss-menu-y: 0px;
+  /* Capped to the room beside the selection, so the menu can never cover the subtitle. */
+  --ss-menu-max-h: none;
 
   --ss-menu-bg: rgba(20, 22, 32, 0.97);
   --ss-menu-fg: #f1f3fa;
@@ -293,6 +295,9 @@
   box-sizing: border-box !important;
   min-width: 168px !important;
   max-width: min(320px, 80vw) !important;
+  max-height: var(--ss-menu-max-h) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
   margin: 0 !important;
   padding: 8px !important;
 

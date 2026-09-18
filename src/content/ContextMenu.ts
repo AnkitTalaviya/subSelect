@@ -30,7 +30,7 @@ import { Disposer } from './dom';
  */
 
 export interface ContextMenuCallbacks {
-  onCopy: () => void;
+  onCopy: (text: string) => void;
   onDismiss: () => void;
   /** The menu changed size and needs placing again. */
   onResized: () => void;
@@ -104,6 +104,8 @@ export class ContextMenu {
     // place — the browser does not paint in the middle of this function.
     element.setAttribute('data-ss-measuring', 'true');
 
+    // Measure unconstrained first, so the natural height is what placement reasons about.
+    element.style.setProperty('--ss-menu-max-h', 'none');
     const rect = element.getBoundingClientRect();
     const origin = this.resolveOrigin();
     const placement = placeMenu({
@@ -115,6 +117,7 @@ export class ContextMenu {
       preference: this.settings.contextMenuPlacement,
     });
 
+    element.style.setProperty('--ss-menu-max-h', `${Math.round(placement.maxHeight)}px`);
     element.style.setProperty('--ss-menu-x', `${Math.round(placement.x - origin.x)}px`);
     element.style.setProperty('--ss-menu-y', `${Math.round(placement.y - origin.y)}px`);
     element.setAttribute('data-ss-side', placement.side);
@@ -168,6 +171,27 @@ export class ContextMenu {
     }
     this.disposer.listen(element, 'keydown', (event) => this.onKeyDown(event as KeyboardEvent));
 
+    /*
+     * Escape has to reach the menu even when focus is elsewhere.
+     *
+     * The menu deliberately does not take focus (§43 — stealing it would break
+     * space-to-pause), so the element listener above only fires once the user has tabbed
+     * in. And the menu now outlives the caption it came from, so by the time Escape is
+     * pressed there is often no selection left for SelectionManager to clear, and its own
+     * Escape handler returns early. Without this, an open menu could not be dismissed by
+     * keyboard at all.
+     */
+    this.disposer.listen(
+      document,
+      'keydown',
+      (event) => {
+        if ((event as KeyboardEvent).key !== 'Escape' || !this.visible) return;
+        event.stopPropagation();
+        this.callbacks.onDismiss();
+      },
+      { capture: true },
+    );
+
     this.host.appendChild(element);
     this.element = element;
     return element;
@@ -210,7 +234,7 @@ export class ContextMenu {
       id: 'copy',
       label: 'Copy',
       icon: '📋',
-      run: () => this.callbacks.onCopy(),
+      run: () => this.callbacks.onCopy(selection.text),
     });
 
     return actions;

@@ -6,7 +6,7 @@ import { ActiveVideoDetector } from './ActiveVideoDetector';
 import { ContextMenu } from './ContextMenu';
 import { OverlayRenderer } from './OverlayRenderer';
 import { PositionTracker } from './PositionTracker';
-import { SelectionManager } from './SelectionManager';
+import { SelectionManager, type ClearReason } from './SelectionManager';
 import { UrlWatcher } from './UrlWatcher';
 import { selectAdapter } from './adapters/AdapterRegistry';
 import type { AdapterContext, SubtitleAdapter } from './adapters/types';
@@ -105,11 +105,15 @@ export class SubtitleEngine {
    * Selections arrive once per completed gesture, so the menu opens when the user has
    * finished choosing rather than flickering along with a drag.
    */
-  private publishSelection(selection: SubtitleSelection | null): void {
+  private publishSelection(selection: SubtitleSelection | null, reason: ClearReason = 'user'): void {
     const binding = this.binding;
     if (binding) {
       if (selection) this.showMenu(binding, selection);
-      else binding.menu.hide();
+      // A caption changing takes the highlighted words off screen, but it is not the user
+      // asking to close the menu they just opened — and captions change every few seconds,
+      // so closing here would make Translate and Definition impossible to read. The menu
+      // holds its own copy of the selection, so it stays useful after the words are gone.
+      else if (reason === 'user') binding.menu.hide();
     }
     this.onSelection(selection);
   }
@@ -124,12 +128,10 @@ export class SubtitleEngine {
     const binding = this.binding;
     if (!binding?.menu.isVisible()) return;
 
+    // No anchor means the caption the selection came from is gone. The menu stays where it
+    // is rather than being hidden — it still holds the selection the user opened it with.
     const anchor = binding.renderer.selectionRect();
-    if (!anchor) {
-      binding.menu.hide();
-      return;
-    }
-    binding.menu.reposition(anchor, this.menuBounds(binding));
+    if (anchor) binding.menu.reposition(anchor, this.menuBounds(binding));
   }
 
   /** The menu stays inside the video box, which is also what the player may clip to. */
@@ -270,13 +272,18 @@ export class SubtitleEngine {
       const selection = new SelectionManager(
         renderer,
         () => this.binding?.cue ?? null,
-        (value) => this.publishSelection(value),
+        (value, reason) => this.publishSelection(value, reason),
         this.settings,
       );
 
       const menu = new ContextMenu(context.playerRoot, this.settings, {
-        onCopy: () => void selection.copySelection(),
-        onDismiss: () => selection.clear(),
+        // The menu acts on the selection it was opened with, which may have outlived the
+        // caption it came from.
+        onCopy: (text) => void selection.copyText(text),
+        onDismiss: () => {
+          selection.clear('user');
+          menu.hide();
+        },
         onResized: () => this.repositionMenu(),
       });
       selection.setUiGuard((node) => menu.contains(node));
@@ -333,7 +340,7 @@ export class SubtitleEngine {
       binding.cue = cue;
 
       // A new caption invalidates whatever was selected in the old one (§16).
-      if (changed) binding.selection.clear();
+      if (changed) binding.selection.clear('cue-change');
 
       binding.renderer.render(cue);
       if (cue) binding.tracker.refresh();

@@ -87,8 +87,34 @@ describe('placeMenu — degenerate cases', () => {
     expect(placement.x).toBe(8);
   });
 
-  it('keeps the top edge visible when the menu is taller than the player', () => {
+  /*
+   * Regression: on a small player neither side fits, and the original code clamped the
+   * menu into the player box — which parked it directly on top of the subtitle, covering
+   * the words and swallowing the clicks meant for them. Found by driving a real browser;
+   * the menu is capped in height now rather than moved.
+   */
+  it('never covers the selection when the menu is taller than the player', () => {
+    const smallPlayer = { left: 0, top: 192, right: 437, bottom: 438 };
+    const caption = { left: 46, top: 393, right: 439, bottom: 418 };
+    const placement = place({ menu: { width: 227, height: 243 }, bounds: smallPlayer, anchor: caption });
+
+    expect(placement.y + placement.maxHeight).toBeLessThanOrEqual(caption.top);
+    expect(placement.maxHeight).toBeLessThan(243);
+  });
+
+  it('caps height to the room available rather than overflowing the player', () => {
     const placement = place({ menu: { width: 200, height: 900 }, bounds: { left: 0, top: 0, right: 400, bottom: 300 } });
-    expect(placement.y).toBe(8);
+    // Anchor sits at 620–650, far below these bounds, so "above" is chosen and capped.
+    expect(placement.maxHeight).toBeLessThan(900);
+    expect(placement.side).toBe('above');
+  });
+
+  it('still leaves a usable menu in a very short player', () => {
+    const placement = place({
+      menu: { width: 200, height: 243 },
+      bounds: { left: 0, top: 300, right: 400, bottom: 460 },
+      anchor: { left: 50, top: 420, right: 350, bottom: 450 },
+    });
+    expect(placement.maxHeight).toBeGreaterThanOrEqual(96);
   });
 });

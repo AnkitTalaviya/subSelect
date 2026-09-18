@@ -34,7 +34,18 @@ export interface Placement {
   x: number;
   y: number;
   side: 'above' | 'below';
+  /**
+   * Height cap for the chosen side. The menu scrolls its result area rather than growing
+   * past this, which is what keeps it off the subtitle.
+   */
+  maxHeight: number;
 }
+
+/**
+ * Never shrink the menu below this, even in a very short player — a two-line menu is
+ * useless. Below this point it is better to overhang the player box a little.
+ */
+const MIN_HEIGHT = 96;
 
 function clamp(value: number, min: number, max: number): number {
   // When the menu is wider than the space available, min can exceed max; preferring min
@@ -45,11 +56,12 @@ function clamp(value: number, min: number, max: number): number {
 export function placeMenu(input: PlacementInput): Placement {
   const { anchor, menu, bounds, gap, margin, preference } = input;
 
-  const above = anchor.top - gap - menu.height;
-  const below = anchor.bottom + gap;
+  // Room between the selection and the edge of the player, on each side.
+  const roomAbove = anchor.top - gap - (bounds.top + margin);
+  const roomBelow = bounds.bottom - margin - (anchor.bottom + gap);
 
-  const fitsAbove = above >= bounds.top + margin;
-  const fitsBelow = below + menu.height <= bounds.bottom - margin;
+  const fitsAbove = roomAbove >= menu.height;
+  const fitsBelow = roomBelow >= menu.height;
 
   let side: 'above' | 'below';
   if (preference === 'above') side = fitsAbove || !fitsBelow ? 'above' : 'below';
@@ -58,16 +70,24 @@ export function placeMenu(input: PlacementInput): Placement {
   // and where the menu is least likely to cover the picture.
   else if (fitsAbove) side = 'above';
   else if (fitsBelow) side = 'below';
-  else side = anchor.top - bounds.top >= bounds.bottom - anchor.bottom ? 'above' : 'below';
+  else side = roomAbove >= roomBelow ? 'above' : 'below';
 
-  const y = clamp(
-    side === 'above' ? above : below,
-    bounds.top + margin,
-    bounds.bottom - margin - menu.height,
-  );
+  /*
+   * The menu is capped to the room on its side instead of being clamped into the player.
+   *
+   * Clamping was the original approach and it is wrong: on a small player neither side
+   * fits, and forcing the box inside the video parks it directly on top of the subtitle it
+   * is describing — covering the words, and swallowing the clicks meant for them. Capping
+   * the height means the menu always starts on the far side of the gap from the selection,
+   * so it can never overlap it.
+   */
+  const maxHeight = Math.max(MIN_HEIGHT, Math.floor(side === 'above' ? roomAbove : roomBelow));
+  const height = Math.min(menu.height, maxHeight);
+
+  const y = side === 'above' ? anchor.top - gap - height : anchor.bottom + gap;
 
   const centred = anchor.left + (anchor.right - anchor.left) / 2 - menu.width / 2;
   const x = clamp(centred, bounds.left + margin, bounds.right - margin - menu.width);
 
-  return { x, y, side };
+  return { x, y, side, maxHeight };
 }
