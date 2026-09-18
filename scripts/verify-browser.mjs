@@ -146,7 +146,32 @@ const check = (name, ok, detail = '') => {
 
 try {
   console.log('browser:', (await devtools('/json/version')).Browser);
-  await sleep(2000);
+  await sleep(2500);
+
+  /*
+   * Turn lookups on from inside the extension.
+   *
+   * The welcome screen's permission prompt cannot be answered in headless, so consent is
+   * written straight to storage. The Chrome host permission is still absent, so providers
+   * are refused at the second gate — which is fine here: what this verifies is that a
+   * lookup is *attempted* on selection, not that a remote service answers.
+   */
+  const worker = (await devtools('/json/list')).find(
+    (t) => t.type === 'service_worker' && t.url.includes('service-worker.js'),
+  );
+  if (worker) {
+    const sw = new CDP(worker.webSocketDebuggerUrl);
+    await sw.ready;
+    await sw.send('Runtime.enable');
+    await sw.eval(
+      `chrome.storage.local.get('settings').then(s => chrome.storage.local.set({
+         settings: { ...(s.settings ?? {}), termsAcceptedAt: Date.now(), autoTranslate: true },
+       })).then(() => 'ok')`,
+    );
+    sw.ws.close();
+    await sleep(600);
+  }
+  check('extension service worker running', Boolean(worker));
 
   const page = (await devtools('/json/list')).find((t) => t.type === 'page');
   const cdp = new CDP(page.webSocketDebuggerUrl);
@@ -230,8 +255,22 @@ try {
     }
     await sleep(1000);
 
-    const selected = await cdp.eval('document.querySelectorAll(\'[data-ss-selected="true"]\').length');
+    const selected = await cdp.eval(
+      'document.querySelectorAll(\'.subselect-word[data-ss-selected="true"]\').length',
+    );
     check('click selects the word', selected === 1, `${selected} highlighted`);
+
+    // Selecting a word should look it up on its own, with no button pressed.
+    let auto = '';
+    for (let i = 0; i < 20; i++) {
+      auto = await cdp.eval(
+        `(()=>{const p=document.querySelector('.subselect-menu-result');
+          return p ? (p.dataset.ssState + ': ' + p.textContent.trim().slice(0,60)) : ''})()`,
+      );
+      if (auto && !auto.startsWith('loading')) break;
+      await sleep(400);
+    }
+    check('selection triggers a lookup with no button press', Boolean(auto), auto || 'no panel appeared');
     check('video still playing after click', await cdp.eval('!document.querySelector("video").paused'));
 
     const menu = JSON.parse(
@@ -274,8 +313,17 @@ try {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: drag.bx, y: drag.by, button: 'left', buttons: 0 });
     await sleep(700);
 
-    const dragged = await cdp.eval('document.querySelectorAll(\'[data-ss-selected="true"]\').length');
-    check('drag selects multiple words', dragged >= 2, `${dragged} highlighted`);
+    const dragged = await cdp.eval(
+      'document.querySelectorAll(\'.subselect-word[data-ss-selected="true"]\').length',
+    );
+    check('drag selects multiple words', dragged >= 2, `${dragged} words`);
+
+    // The spaces between selected words carry the highlight too, so a phrase reads as one
+    // mark rather than one box per word.
+    const bridged = await cdp.eval(
+      'document.querySelectorAll(\'.subselect-gap[data-ss-selected="true"]\').length',
+    );
+    check('phrase highlight is continuous', bridged >= dragged - 1, `${bridged} gaps bridged`);
     console.log('   phrase:', await cdp.eval(`[...document.querySelectorAll('[data-ss-selected="true"]')].map(e=>e.textContent).join(' ')`));
 
     // Every menu action must actually run when clicked.

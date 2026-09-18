@@ -103,7 +103,7 @@ POST  { "text": "…", "source": "de", "target": "en", "context": "…" }
 
 | Gesture | Result |
 | --- | --- |
-| Click a word | Selects it and opens the menu |
+| Click a word | Selects it, opens the menu, and **looks it up straight away** |
 | Click it again | Clears the selection |
 | Drag across words | Selects the phrase — any direction, across both caption lines |
 | Double-click | Selects the whole caption |
@@ -255,9 +255,10 @@ welcome screen, and the Chrome host permission granted with it. Revoking the sit
 in Chrome stops everything regardless of the setting, and one switch in Settings turns
 lookups off again.
 
-Once on, the selected text and its subtitle line are sent to a provider **only** when you
-press Translate, Definition or Pronounce — never in the background, never on a timer,
-never for text you did not select. Every answer is labelled with where it came from.
+Once on, SubSelect looks a word up **as soon as you select it**, so that selection is
+itself the request — only ever for text you chose, never in the background and never on a
+timer. Turn off *Look up automatically* in Settings to go back to pressing Translate each
+time. Every answer is labelled with where it came from.
 
 Declining is a first-class option: selection, copy and save need no network whatsoever.
 

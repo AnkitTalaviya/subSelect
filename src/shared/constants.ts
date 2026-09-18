@@ -105,6 +105,15 @@ export const MENU_GAP_PX = 10;
 export const MENU_MARGIN_PX = 8;
 
 /**
+ * Pause before an automatic lookup fires.
+ *
+ * Long enough that clicking through several words in a row sends one request instead of
+ * one per word, short enough to feel immediate. Each new selection cancels the pending
+ * one, so only the word you settle on is ever looked up.
+ */
+export const AUTO_TRANSLATE_DELAY_MS = 220;
+
+/**
  * Keyboard command ids, mirrored in manifest.json.
  *
  * Only the toggle exists so far: the rest of §45 (translate, dictionary, save vocabulary)

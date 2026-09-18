@@ -1,5 +1,5 @@
 import type { SubtitleSelection } from '@shared/types';
-import { CLASS, MENU_GAP_PX, MENU_MARGIN_PX } from '@shared/constants';
+import { AUTO_TRANSLATE_DELAY_MS, CLASS, MENU_GAP_PX, MENU_MARGIN_PX } from '@shared/constants';
 import { sendMessage } from '@shared/messages';
 import type { Settings } from '@shared/settings';
 import type { DictionarySense, WordDetails } from '../providers/types';
@@ -105,6 +105,8 @@ export class ContextMenu {
    * takes a token and only writes a result while that token is still current.
    */
   private runToken = 0;
+  /** Pending automatic lookup, cancelled by the next selection or by closing. */
+  private autoTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -131,6 +133,33 @@ export class ContextMenu {
     element.removeAttribute('hidden');
     this.visible = true;
     this.position(anchor, bounds);
+    this.scheduleAutoLookup(selection);
+  }
+
+  /**
+   * Looks the selection up without waiting for a press (§4 — "see word, click, popup").
+   *
+   * Debounced, so clicking along a sentence sends one request for the word you settle on
+   * rather than one per word passed through; each new selection cancels the pending one.
+   *
+   * Skipped entirely while online lookups are off. Firing then would put "lookups are off"
+   * on screen every single time a word is selected, which is nagging rather than
+   * informing — pressing Translate still explains it.
+   */
+  private scheduleAutoLookup(selection: SubtitleSelection): void {
+    this.cancelAutoLookup();
+    if (!this.settings.autoTranslate) return;
+    if (this.settings.termsAcceptedAt === 0) return;
+
+    this.autoTimer = setTimeout(() => {
+      this.autoTimer = null;
+      void this.runDetails(selection);
+    }, AUTO_TRANSLATE_DELAY_MS);
+  }
+
+  private cancelAutoLookup(): void {
+    if (this.autoTimer !== null) clearTimeout(this.autoTimer);
+    this.autoTimer = null;
   }
 
   /**
@@ -175,6 +204,7 @@ export class ContextMenu {
 
   hide(): void {
     stopSpeaking();
+    this.cancelAutoLookup();
     this.visible = false;
     this.element?.setAttribute('hidden', '');
   }
@@ -189,6 +219,7 @@ export class ContextMenu {
 
   destroy(): void {
     stopSpeaking();
+    this.cancelAutoLookup();
     this.disposer.dispose();
     this.element?.remove();
     this.element = null;

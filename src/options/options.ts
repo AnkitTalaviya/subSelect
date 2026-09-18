@@ -32,6 +32,7 @@ const controls = {
   dragToSelect: el<HTMLInputElement>('dragToSelect'),
   doubleClickToSelect: el<HTMLInputElement>('doubleClickToSelect'),
   showContextMenu: el<HTMLInputElement>('showContextMenu'),
+  autoTranslate: el<HTMLInputElement>('autoTranslate'),
   contextMenuPlacement: el<HTMLSelectElement>('contextMenuPlacement'),
   speechEnabled: el<HTMLInputElement>('speechEnabled'),
   theme: el<HTMLSelectElement>('theme'),
@@ -97,6 +98,7 @@ function render(settings: Settings): void {
   controls.dragToSelect.checked = settings.dragToSelect;
   controls.doubleClickToSelect.checked = settings.doubleClickToSelect;
   controls.showContextMenu.checked = settings.showContextMenu;
+  controls.autoTranslate.checked = settings.autoTranslate;
   controls.contextMenuPlacement.value = settings.contextMenuPlacement;
   controls.speechEnabled.checked = settings.speechEnabled;
   controls.theme.value = settings.theme;
@@ -278,6 +280,7 @@ const toggles: Array<keyof Settings & keyof typeof controls> = [
   'dragToSelect',
   'doubleClickToSelect',
   'showContextMenu',
+  'autoTranslate',
   'speechEnabled',
 ];
 

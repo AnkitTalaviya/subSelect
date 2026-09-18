@@ -67,6 +67,14 @@ export interface Settings {
 
   /** Show the context menu when something is selected (§16). */
   showContextMenu: boolean;
+  /**
+   * Look a word up as soon as it is selected, without pressing Translate.
+   *
+   * This changes when text leaves the device: with it on, selecting a word is itself the
+   * request. It only ever runs while online lookups are on, and it is listed on the
+   * welcome screen and in Settings for that reason.
+   */
+  autoTranslate: boolean;
   /** Which side of the selection the menu prefers (§49 "Popup position"). */
   contextMenuPlacement: 'auto' | 'above' | 'below';
   /** Offer the Pronounce action, using the browser's own speech synthesis (§28). */
@@ -99,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dragToSelect: true,
   doubleClickToSelect: true,
   showContextMenu: true,
+  autoTranslate: true,
   contextMenuPlacement: 'auto',
   speechEnabled: true,
   highlightColor: 'rgba(108, 140, 255, 0.55)',
