@@ -69,6 +69,11 @@ at `verify.png` — look at it, an assertion passing on a blank frame proves not
      character, including umlauts and `ß`.
    * **Overlay aligns** — our words sit exactly on the original glyphs at default size,
      at 200% browser zoom, in theater mode and in fullscreen.
+   * **Typography unchanged** — the caption is the same size, family and weight with
+     SubSelect on as with it off. SubSelect is a language tool, not a caption-size tool; it
+     copies the player's typography and must never impose its own. Check this with a
+     **two-line** caption in particular, which is where the font is easiest to read off the
+     wrong element.
    * **Click** — clicking a word highlights exactly that word and does **not**
      pause/play the video.
    * **Drag** — dragging selects the whole phrase, in both directions, and across both

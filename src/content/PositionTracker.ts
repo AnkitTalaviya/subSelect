@@ -190,21 +190,26 @@ export class PositionTracker {
 }
 
 /**
- * Players commonly put positioning on an outer box and typography on an inner one, so the
- * font has to be read from whichever element actually carries the text.
+ * The element whose font actually renders the caption's glyphs.
+ *
+ * Players put positioning on an outer box and typography on an inner one, so reading the
+ * outer box gives the wrong font. This finds the first non-empty text node and returns its
+ * parent — by definition the element whose computed style paints those characters.
+ *
+ * The previous version walked down only while each level had exactly one child, which
+ * silently stopped at the container as soon as a caption had **two lines** and copied its
+ * inherited font instead: 14px where the player was drawing 34px. SubSelect is a language
+ * tool, not a caption-size tool; the overlay has to reproduce the player's typography
+ * exactly, never impose its own.
  */
-function findStyleSource(element: HTMLElement, maxDepth = 3): HTMLElement {
-  let current = element;
+function findStyleSource(element: HTMLElement): HTMLElement {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
 
-  for (let depth = 0; depth < maxDepth; depth++) {
-    const children = [...current.children].filter(
-      (child): child is HTMLElement => child instanceof HTMLElement,
-    );
-    if (children.length !== 1) break;
-    const only = children[0]!;
-    if (!only.textContent?.trim()) break;
-    current = only;
+  let node = walker.nextNode();
+  while (node) {
+    if (node.nodeValue?.trim() && node.parentElement) return node.parentElement;
+    node = walker.nextNode();
   }
 
-  return current;
+  return element;
 }

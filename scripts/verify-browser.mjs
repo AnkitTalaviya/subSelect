@@ -380,6 +380,62 @@ try {
      * caption is grown by hand here.
      */
     if (mirrored) {
+      /*
+       * Typography must be copied, never invented: SubSelect is a language tool, not a
+       * caption-size tool, so the overlay has to render at exactly the player's own size.
+       * Checked with a TWO-LINE caption, because that is the case where the caption
+       * container has more than one child and the font is easiest to read off the wrong
+       * element.
+       */
+      await cdp.eval(`(()=>{
+        const h = document.querySelector('[data-subselect-hidden="true"]');
+
+        // Reuse the page's own caption element names, so the injected lines carry the same
+        // styling the player would give them — otherwise this measures the test's markup
+        // rather than the site's.
+        const walker = document.createTreeWalker(h, NodeFilter.SHOW_TEXT);
+        let probe = walker.nextNode();
+        while (probe && !probe.nodeValue.trim()) probe = walker.nextNode();
+        const inner = probe?.parentElement;
+        const innerClass = inner && inner !== h ? inner.className : '';
+        const outerClass = inner?.parentElement && inner.parentElement !== h
+          ? inner.parentElement.className : '';
+
+        const line = (t) => {
+          const s = document.createElement('span');
+          s.className = innerClass;
+          s.textContent = t;
+          if (!outerClass) return s;
+          const d = document.createElement('div');
+          d.className = outerClass;
+          d.appendChild(s);
+          return d;
+        };
+        h.replaceChildren(line('Ich habe gestern'), line('einen interessanten Film gesehen.'));
+        return 1})()`);
+      await sleep(800);
+
+      const type = JSON.parse(
+        await cdp.eval(`(()=>{
+          const host = document.querySelector('[data-subselect-hidden="true"]');
+          const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+          let node = walker.nextNode();
+          while (node && !node.nodeValue.trim()) node = walker.nextNode();
+          const original = node?.parentElement;
+          const ours = document.querySelector('.subselect-word');
+          if (!original || !ours) return JSON.stringify({found:false});
+          const a = getComputedStyle(original), b = getComputedStyle(ours);
+          return JSON.stringify({found:true,
+            originalSize: a.fontSize, ourSize: b.fontSize,
+            originalFamily: a.fontFamily.split(',')[0], ourFamily: b.fontFamily.split(',')[0],
+            originalWeight: a.fontWeight, ourWeight: b.fontWeight})})()`),
+      );
+      check('overlay matches the caption font size', type.found && type.originalSize === type.ourSize,
+        `player ${type.originalSize} vs overlay ${type.ourSize}`);
+      check('overlay matches the caption font family and weight',
+        type.found && type.originalFamily === type.ourFamily && type.originalWeight === type.ourWeight,
+        `${type.originalFamily}/${type.originalWeight} vs ${type.ourFamily}/${type.ourWeight}`);
+
       await cdp.eval(`(()=>{const h=document.querySelector('[data-subselect-hidden="true"]');
         h.textContent = 'Ich möchte morgen'; return 1})()`);
       await sleep(600);
