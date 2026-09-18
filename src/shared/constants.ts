@@ -34,6 +34,8 @@ export const CLASS = {
   menuChips: `${NS}-menu-chips`,
   menuChip: `${NS}-menu-chip`,
   menuItemCompact: `${NS}-menu-item-compact`,
+  menuAnswer: `${NS}-menu-answer`,
+  menuCaret: `${NS}-menu-caret`,
 } as const;
 
 export const ATTR = {
@@ -56,6 +58,15 @@ export const STORAGE_KEYS = {
 /** Session storage is memory-backed: nothing under these keys is ever written to disk. */
 export const SESSION_KEYS = {
   selectionPrefix: 'selection:',
+  /**
+   * The ChatGPT tab Ask AI is currently talking to.
+   *
+   * Session storage is what gives "a new chat when you start, follow-ups after that" for
+   * free: it is cleared when the browser closes, so the first ask of a browsing session
+   * opens a fresh conversation and every ask after it lands in that same one. It also means
+   * a tab id — which says something about what the user has open — never reaches the disk.
+   */
+  askAiTab: 'askAi:tab',
 } as const;
 
 /**
@@ -158,6 +169,18 @@ export const SUPPORTED_LANGUAGES = [
 ] as const;
 
 export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code'];
+
+/**
+ * Human name for a language code, for text meant to be read rather than matched.
+ *
+ * Falls back to the code itself: a cue can declare a language we do not have a label for
+ * (`sv`, or a regional tag like `pt-BR`), and "sv" in a sentence is still better than
+ * either a blank or a wrong guess.
+ */
+export function languageLabel(code: string): string {
+  const base = code.split('-')[0]?.toLowerCase() ?? code;
+  return SUPPORTED_LANGUAGES.find((language) => language.code === base)?.label ?? code;
+}
 
 /** Message shown when a player's subtitles cannot be reached legitimately (§34). */
 export const UNSUPPORTED_MESSAGE = "Interactive subtitles aren't available for this player.";

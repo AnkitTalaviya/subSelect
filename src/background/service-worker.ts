@@ -1,4 +1,5 @@
 import type { ExtensionMessage } from '@shared/messages';
+import { ASK_AI_PORT, type AskAiPortMessage } from '@shared/messages';
 import type { SubtitleSelection } from '@shared/types';
 import { log } from '@shared/logger';
 import { getSettings, setSettings } from '@shared/storage';
@@ -11,6 +12,16 @@ import { createTranslationChain } from '../providers/translation/providers';
 import { createDictionaryChain } from '../providers/dictionary/providers';
 import { findPronunciation, wiktionaryHostFor } from '../providers/pronunciation/providers';
 import { getVocabularyCount, saveWord } from '../vocabulary/VocabularyManager';
+import { fillPrompt } from '@shared/askAi';
+import {
+  ASSISTANTS,
+  assistantById,
+  customAssistant,
+  isAssistantGranted,
+  originsFor,
+  type Assistant,
+} from '@shared/assistants';
+import { askAssistant, streamAnswer } from './askAssistant';
 
 /**
  * MV3 service worker.
@@ -52,11 +63,36 @@ chrome.runtime.onStartup.addListener(() => {
  */
 async function reconcileDynamicScripts(): Promise<void> {
   try {
-    // getAll() reports host permissions the user has granted. Content-script `matches`
-    // from the manifest are not host permissions and never appear here, so this list is
-    // exactly the set of sites the user opted into.
+    /*
+     * NOTE: this list is wider than "sites the user opted into".
+     *
+     * The comment here used to claim that content-script `matches` from the manifest never
+     * appear in `getAll()`. They do — on a clean profile with nothing granted, `origins`
+     * already contains all fourteen patterns from `content_scripts`. So the registration
+     * below re-registers the manifest's own sites dynamically, duplicating the static
+     * declaration, and `origins.length === 0` is never true.
+     *
+     * That is harmless (the content script guards against running twice) and predates Ask
+     * AI, so it is left alone rather than fixed in passing — but it is not what the code
+     * reads as if it does.
+     */
     const granted = await chrome.permissions.getAll();
-    const origins = granted.origins ?? [];
+    /*
+     * Assistant origins are excluded deliberately.
+     *
+     * Those are granted for Ask AI, which reaches the page with a one-shot `executeScript`
+     * at the moment of a press. Treating the grant as an opt-in to interactive subtitles
+     * would leave the whole engine standing on sites that have no video in them — access the
+     * user gave in order to be *asked a question*, quietly spent on something else. (A side
+     * effect is that "Enable on this site" does nothing on chatgpt.com or claude.ai, which
+     * costs nothing: there are no captions there to make clickable.)
+     *
+     * A custom assistant's origin cannot be excluded this way, because it is whatever the
+     * user typed and may legitimately also be a site they want subtitles on. Its grant is
+     * requested separately and the overlap is theirs to want.
+     */
+    const askAiOrigins = new Set<string>(originsFor(ASSISTANTS));
+    const origins = (granted.origins ?? []).filter((origin) => !askAiOrigins.has(origin));
 
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [DYNAMIC_SCRIPT_ID] });
     if (existing.length > 0) {
@@ -310,6 +346,216 @@ async function pronounce(message: Extract<ExtensionMessage, { type: 'FIND_PRONUN
     () => findPronunciation(message.text, language),
     { gate: gateFor(settings), emptyMessage: 'Recordings are turned off.' },
   );
+}
+
+/**
+ * Ask AI (§65).
+ *
+ * Note what is *not* here: no `gate()`, no chain, no fetch. This does not send text to a
+ * service on the user's behalf — it puts a question into the user's own signed-in ChatGPT,
+ * in a tab they can see, only ever in response to a press. `termsAcceptedAt` governs the
+ * lookups SubSelect performs in the background, and stretching it to cover this would
+ * imply the free-provider chain is involved when none of it is.
+ */
+async function askAi(message: Extract<ExtensionMessage, { type: 'ASK_AI' }>) {
+  const settings = await getSettings();
+
+  if (!settings.askAiEnabled) {
+    return { ok: false as const, kind: 'not-configured' as const, message: 'Ask AI is turned off in settings.' };
+  }
+
+  const { allowed, known, fallback } = await resolveAssistants(settings);
+  if (!fallback) {
+    return {
+      ok: false as const,
+      kind: 'not-configured' as const,
+      message: 'No assistant is set up for Ask AI.',
+    };
+  }
+  // Gemini and a custom entry without `{prompt}` can only be reached by typing, so without
+  // the grant a press would open an empty chat and silently drop the question.
+  if (!fallback.promptUrl && !allowed.some((item) => item.id === fallback.id)) {
+    return {
+      ok: false as const,
+      kind: 'no-permission' as const,
+      message: `${fallback.label} needs access before SubSelect can ask it anything.`,
+    };
+  }
+
+  const prompt = fillPrompt(settings.askAiPrompt, {
+    // The headword, for the same reason translation uses it: "entscheiden." asked as-is
+    // invites an answer about the punctuation.
+    word: message.lookupText || message.text,
+    sentence: message.context ?? message.text,
+    language: message.language || settings.subtitleLanguage,
+    target: settings.translationLanguage,
+  });
+
+  /*
+   * Panel answers need the assistant's permission twice over — to type the question in, and
+   * to read the reply back out — so without the tick there is nothing to read and the
+   * question simply goes to the assistant. The press still works; only the convenience is
+   * missing, and the panel says which tick would restore it rather than failing.
+   */
+  const wantsPanel = settings.askAiAnswerIn === 'panel';
+  const canReadAnswer = allowed.some((item) => item.id === fallback.id) || allowed.length > 0;
+  const panelBlocked =
+    wantsPanel && !canReadAnswer
+      ? `Tick an assistant under Ask AI in settings to read answers here.`
+      : null;
+
+  try {
+    const outcome = await askAssistant({
+      prompt,
+      allowed,
+      known,
+      fallback,
+      preferOpenTab: settings.askAiPreferOpenTab,
+      conversation: settings.askAiConversation,
+      // A panel answer never takes the viewer anywhere: that is the whole point of it.
+      focus: wantsPanel ? false : !settings.askAiBackground,
+    });
+
+    if (wantsPanel && outcome.answer) {
+      const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      pendingAnswers.set(runId, outcome.answer);
+      return { ok: true as const, data: { ...outcome.result, answerRunId: runId } };
+    }
+
+    return {
+      ok: true as const,
+      data: {
+        ...outcome.result,
+        ...(panelBlocked ? { answerUnavailable: panelBlocked } : {}),
+        ...(wantsPanel && !panelBlocked
+          ? { answerUnavailable: `The answer is in ${outcome.result.assistantLabel}.` }
+          : {}),
+      },
+    };
+  } catch (error) {
+    log.error('ask AI failed', error);
+    return {
+      ok: false as const,
+      kind: 'provider' as const,
+      message: `Could not open ${fallback.label}.`,
+    };
+  }
+}
+
+/**
+ * Ask AI runs over a port, not a one-shot message.
+ *
+ * Two reasons, and the first is not a preference. `sender.tab` is populated only for a tab
+ * the extension has access to, and content-script `matches` are not host permissions — so
+ * on the sites SubSelect runs on by default the worker is handed `{ id, url, origin }` and
+ * has no tab id to send anything back to. A port replies to the sender that opened it.
+ *
+ * The second is that a port keeps this worker alive while the reply is being written, and
+ * a disconnect tells us the viewer moved on so the watch can stop.
+ */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== ASK_AI_PORT) return;
+
+  let live = true;
+  port.onDisconnect.addListener(() => {
+    live = false;
+  });
+
+  port.onMessage.addListener((raw) => {
+    const message = raw as ExtensionMessage;
+    if (message.type !== 'ASK_AI') return;
+
+    void askAi(message)
+      .then(async (outcome) => {
+        if (!live) return;
+        post(port, { kind: 'result', outcome });
+
+        const runId = outcome.ok ? outcome.data.answerRunId : undefined;
+        const watch = runId ? pendingAnswers.get(runId) : undefined;
+        if (!runId || !watch) {
+          // Nothing to stream; the panel has everything it is going to get.
+          try {
+            port.disconnect();
+          } catch {
+            // Already closed.
+          }
+          return;
+        }
+        pendingAnswers.delete(runId);
+
+        await streamAnswer(watch.tabId, watch.assistant, watch.baseline, (update) => {
+          if (!live) return;
+          post(port, {
+            kind: 'answer',
+            text: update.text,
+            done: update.done,
+            ...(update.error ? { error: update.error } : {}),
+          });
+        });
+
+        try {
+          port.disconnect();
+        } catch {
+          // The panel may have closed first, which is the normal ending.
+        }
+      })
+      .catch((error: unknown) => {
+        log.error('ask AI failed', error);
+        if (live) {
+          post(port, {
+            kind: 'result',
+            outcome: { ok: false, kind: 'provider', message: 'Could not reach an assistant.' },
+          });
+        }
+      });
+  });
+});
+
+function post(port: chrome.runtime.Port, message: AskAiPortMessage): void {
+  try {
+    port.postMessage(message);
+  } catch {
+    // The other end went away mid-answer; nothing to do but stop.
+  }
+}
+
+/**
+ * Answers waiting to be streamed, keyed by the run id handed back to the panel.
+ *
+ * `askAi` decides *whether* a reply can be read; the port handler does the reading. Passing
+ * it through here keeps `askAi` returning a plain serialisable result rather than a tab
+ * handle the content script has no business seeing.
+ */
+const pendingAnswers = new Map<string, { tabId: number; assistant: Assistant; baseline: number }>();
+
+/**
+ * Turns the settings into the three lists the hand-off needs.
+ *
+ * `allowed` is the intersection of what the user ticked and what Chrome still grants —
+ * checked here rather than trusted from storage, because access can be revoked in Chrome's
+ * own settings at any time and the stored list would not hear about it.
+ */
+async function resolveAssistants(settings: Settings): Promise<{
+  allowed: Assistant[];
+  known: Assistant[];
+  fallback: Assistant | null;
+}> {
+  const custom = customAssistant({ name: settings.askAiCustomName, url: settings.askAiCustomUrl });
+  const known = custom ? [...ASSISTANTS, custom] : [...ASSISTANTS];
+
+  const ticked = known.filter((assistant) => settings.askAiAllowed.includes(assistant.id));
+  const allowed: Assistant[] = [];
+  for (const assistant of ticked) {
+    const granted = await isAssistantGranted(assistant, (origins) =>
+      chrome.permissions.contains({ origins }),
+    );
+    if (granted) allowed.push(assistant);
+  }
+
+  const chosen = assistantById(settings.askAiAssistant, custom);
+  // A custom assistant that has been emptied out, or a stale id, must not leave the button
+  // pointing at nothing — the first built-in is a working answer.
+  return { allowed, known, fallback: chosen ?? ASSISTANTS[0] ?? null };
 }
 
 chrome.runtime.onMessage.addListener((raw, sender, respond) => {

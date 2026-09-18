@@ -510,6 +510,92 @@ Grammar is German-only by design (§13). The useful facts live in language-speci
 templates, and a generic extractor that half-worked everywhere would be worse than one
 that is correct for the language the product is built around.
 
+### Ask AI is not a provider (§65)
+
+`Ask AI` deliberately sits outside `providers/` and outside the chain. Every provider is a
+`fetch` the worker makes on the user's behalf, gated on `termsAcceptedAt` and a host
+permission. Ask AI makes no request at all: it opens a tab in an assistant the user is
+already signed into, with the question already in it. There is no key, no endpoint and no
+response to parse, so a `TranslationProvider`-shaped interface would have been a costume
+rather than a fit — and running it through `gate()` would have implied the free-provider
+chain was involved when none of it is.
+
+`shared/assistants.ts` is a catalogue of six built-ins plus whatever the user configures.
+Each entry is a set of match patterns, a home URL, and optionally a URL that carries the
+question. Origins are the **single** source of truth for permission, tab discovery and
+"is this tab that assistant" — they were briefly split into an `origins` list and a `hosts`
+list, and drifted within one sitting.
+
+#### Choosing where the question goes
+
+Three routes, in order: an assistant tab the user already has open, then the chat this
+session started, then a new chat. The first is what makes the button follow attention
+rather than a setting.
+
+Finding those tabs is `tabs.query({ url: <granted origins> })`, which returns **only** tabs
+whose origin the user granted — everything else is invisible, including that it exists. That
+is the whole reason this needs no `tabs` permission and its "read your browsing history"
+warning, and it is enforced by Chrome rather than by our own filtering. Ranking is the
+browser's own `lastAccessed`, so "most recently used" means what the user would mean by it.
+`assistantTabsByRecency` is pure and unit-tested; the worker only supplies the tabs.
+
+**Know what a headless run can and cannot tell you here.** Under `--headless=new`, Chromium
+withholds host permissions: `tab.url` is absent, `tabs.query({url})` returns nothing and
+`executeScript` is refused *even for an origin the manifest declares*. Headful, all three
+work and an un-granted origin correctly returns nothing. Two hours went into treating the
+headless result as an API limit; it is not one.
+
+#### Two platform facts this design is built around
+
+**`sender.tab` is withheld.** Chrome populates it only for a tab the extension has access to,
+and content-script `matches` are **not** host permissions — so on the sites SubSelect runs on
+by default the worker receives `{ id, url, origin }` and no tab id at all. There is therefore
+nothing to `tabs.sendMessage` a streamed answer back to. Ask AI runs over a
+`runtime.Port` instead, which replies to the sender that opened it, needs no permission, and
+keeps the worker alive while the model writes. The port is also the run identity: closing it
+cancels a question the viewer has moved on from.
+
+**A hidden control is not an absent one.** "Still generating" is read from the stop button,
+and several of these keep it mounted and merely hide it — so testing for existence meant an
+answer that never finished and a caret that blinked forever. Every such check tests
+visibility.
+
+#### Delivery, and why it is written to expect failure
+
+With the assistant granted, the question is typed into its composer and the send is
+**confirmed** by watching the composer empty — the one signal that distinguishes "asked"
+from "typed into a box and left there". That is the better path: it works for every
+assistant including ones publishing no URL entry point, and needs no vendor cooperation.
+Without the grant it falls back to a `?q=` URL, which some vendors publish and others merely
+accept by convention.
+
+Typing automates someone else's interface and will break when any of them reshuffles their
+DOM, so every failure falls through to the next route. A redesign at one vendor costs a new
+chat per word there; it does not break the button. The selectors go from specific to generic
+precisely because the confirmation, not the selector, is what makes it safe.
+
+`deliverPrompt` is serialized by `chrome.scripting.executeScript`, so it may reference
+nothing outside itself — no imports, no module constants. That constraint is load-bearing
+and is why it is one long function rather than several small ones.
+
+#### Not navigating someone else's tab
+
+A tab the user opened may be *added to* (the follow-up route) but never navigated. Only a
+tab SubSelect opened is ever reused for a new chat, because "start a new chat every time"
+must not replace a conversation the viewer was having.
+
+Confirming a tab is still ours is only as strong as what Chrome will show. With the grant,
+`tab.url` is readable and the check is exact. Without it the URL is hidden — and absence is
+ambiguous, meaning either "never granted" or "this tab has left", which need opposite
+answers. Knowing whether the grant exists resolves it.
+
+The `onUpdated` watcher now forgets the tab **only on a URL it can actually read**. It used
+to also treat a bare `status: 'loading'` as the tab leaving, which was wrong in the worst
+way: every assistant navigates itself once an answer starts, that event carries no readable
+URL, so the tab was dropped after every question and the next one opened a fresh tab. A new
+tab per word is a far worse failure than the rare repurposed-tab case it was guarding, and
+ticking the assistant removes even that.
+
 ### Vocabulary (§19–§22)
 
 `chrome.storage.local`, one array under one key — the list is small, and one key means
@@ -553,10 +639,11 @@ It grows with each new surface — Phase 3's keyboard commands, Phase 4's provid
 | Permission | Why | Install warning |
 | --- | --- | --- |
 | `storage` | settings + vocabulary, local only | none |
-| `scripting` | register content scripts for user-approved origins | none |
+| `scripting` | register content scripts for user-approved origins; inject the one Ask AI composer function on a press | none |
 | `activeTab` | one-off "try it on this page" from the toolbar | none |
 | `content_scripts.matches` (known video sites) | run automatically where video is expected | per-site |
-| `optional_host_permissions: *://*/*` | user-granted, per-site, on request | only when requested |
+| `optional_host_permissions: *://*/*` | user-granted, per-site, on request; also one origin per assistant ticked under Ask AI | only when requested |
+| `tabs` | **not requested.** Ask AI finds assistant tabs through `tabs.query({url})` under the per-assistant grants instead, which keeps every other tab invisible and avoids the "read your browsing history" warning | — |
 
 Deliberately **not** requested: `tabs`, `webRequest`, `declarativeNetRequest`, `cookies`,
 `history`, `<all_urls>` at install time. The extension never reads a URL it was not

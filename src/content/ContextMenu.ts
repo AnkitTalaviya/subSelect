@@ -1,6 +1,6 @@
 import type { SubtitleSelection } from '@shared/types';
 import { AUTO_TRANSLATE_DELAY_MS, CLASS, MENU_GAP_PX, MENU_MARGIN_PX } from '@shared/constants';
-import { sendMessage } from '@shared/messages';
+import { ASK_AI_PORT, sendMessage, type AskAiPortMessage } from '@shared/messages';
 import type { Settings } from '@shared/settings';
 import type { DictionarySense, WordDetails } from '../providers/types';
 import { placeMenu, type Box } from './menuPlacement';
@@ -53,6 +53,10 @@ interface MenuAction {
 const ICONS: Record<string, string> = {
   translate:
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  // A sparkle, which is the one glyph every product currently uses for "ask a model" —
+  // borrowed rather than invented, because recognition is the whole job of an unlabelled
+  // icon.
+  ask: '<path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z"/><path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9z"/>',
   pronounce: '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>',
   save: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
@@ -102,6 +106,10 @@ function labelSpan(text: string): HTMLElement {
 interface MenuResult {
   state: 'loading' | 'ok' | 'error' | 'notice';
   text?: string;
+  /** A model's reply, rendered as prose rather than as a one-line status. */
+  answer?: string;
+  /** A secondary line under the main content — why something is missing, usually. */
+  note?: string;
   senses?: DictionarySense[];
   details?: WordDetails;
   /** Provider id, shown so the user always knows where an answer came from. */
@@ -127,6 +135,13 @@ export class ContextMenu {
   private runToken = 0;
   /** Pending automatic lookup, cancelled by the next selection or by closing. */
   private autoTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The open Ask AI channel, if a question is in flight.
+   *
+   * Closing it is how a superseded question is cancelled: the worker sees the disconnect and
+   * stops watching for a reply nobody is waiting for any more.
+   */
+  private askPort: chrome.runtime.Port | null = null;
   /** Last placement inputs, so the menu can be re-placed after its content grows. */
   private lastAnchor: Box | null = null;
   private lastBounds: Box | null = null;
@@ -240,6 +255,7 @@ export class ContextMenu {
 
   hide(): void {
     stopSpeaking();
+    this.closeAskPort();
     this.cancelAutoLookup();
     this.visible = false;
     this.element?.setAttribute('hidden', '');
@@ -255,6 +271,7 @@ export class ContextMenu {
 
   destroy(): void {
     stopSpeaking();
+    this.closeAskPort();
     this.cancelAutoLookup();
     this.disposer.dispose();
     this.element?.remove();
@@ -331,6 +348,20 @@ export class ContextMenu {
       run: () => void this.runDetails(selection),
     });
 
+    // Next to Translate, because it answers the question Translate leaves over: the panel
+    // says what the word means, this says why it is in the shape the sentence put it in.
+    //
+    // Labelled generically rather than after one assistant: which one gets the question is
+    // decided at press time from what the viewer has open, so naming ChatGPT here would be
+    // wrong for anyone who switched to Claude. The result panel names the one that answered.
+    if (this.settings.askAiEnabled) {
+      actions.push({
+        id: 'ask',
+        label: 'Ask AI',
+        run: () => this.runAsk(selection),
+      });
+    }
+
     if (this.settings.speechEnabled && isSpeechAvailable()) {
       actions.push({
         id: 'pronounce',
@@ -368,14 +399,20 @@ export class ContextMenu {
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
+  /**
+   * The dictionary wants the headword (`geht's`, not `geht's?`); translation wants the
+   * phrase as displayed (§40). A multi-word selection has no headword, so it is itself.
+   */
+  private headwordFor(selection: SubtitleSelection): string {
+    const single = selection.words.filter((word) => word.isWordLike);
+    return single.length === 1 ? single[0]!.normalizedText : selection.text;
+  }
+
   private async runDetails(selection: SubtitleSelection): Promise<void> {
     const token = this.beginRun();
     this.setResult({ state: 'loading', text: 'Looking up…' }, token);
 
-    // The dictionary wants the headword (`geht's`, not `geht's?`); translation wants the
-    // phrase as displayed (§40).
-    const single = selection.words.filter((word) => word.isWordLike);
-    const lookupText = single.length === 1 ? single[0]!.normalizedText : selection.text;
+    const lookupText = this.headwordFor(selection);
 
     const outcome = await sendMessage({
       type: 'GET_WORD_DETAILS',
@@ -404,6 +441,106 @@ export class ContextMenu {
     this.lastTranslation = headlineFor(details).text ?? null;
 
     this.setResult({ state: 'ok', details }, token);
+  }
+
+  /**
+   * Hands the selection to whichever assistant the viewer has open.
+   *
+   * Nothing is fetched here and no answer comes back — the answer appears in the assistant,
+   * which is the point. All the menu can honestly report is where the question went, so that
+   * is all it says. Naming the assistant matters precisely because the button does not
+   * always pick the same one: "Asked in your Claude chat" is the difference between knowing
+   * where to look and hunting for it.
+   */
+  /**
+   * Opens a port for the question and renders whatever comes back down it.
+   *
+   * A port rather than a one-shot message because the reply is streamed, and because
+   * `sender.tab` is withheld from the worker on the sites SubSelect runs on by default —
+   * see `ASK_AI_PORT`. The port is also the run identity: a stale one is disconnected the
+   * moment a new question starts, so a forty-second answer can never land under a word the
+   * viewer moved on from.
+   */
+  private runAsk(selection: SubtitleSelection): void {
+    const token = this.beginRun();
+    this.setResult({ state: 'loading', text: 'Sending your question…' }, token);
+
+    let port: chrome.runtime.Port;
+    try {
+      port = chrome.runtime.connect({ name: ASK_AI_PORT });
+    } catch {
+      this.setResult({ state: 'error', text: "Couldn't hand that over. Try again." }, token);
+      return;
+    }
+    this.askPort = port;
+
+    let label = 'your assistant';
+    port.onMessage.addListener((raw) => {
+      const message = raw as AskAiPortMessage;
+      if (this.askPort !== port || token !== this.runToken) return;
+
+      if (message.kind === 'result') {
+        const outcome = message.outcome;
+        if (!outcome.ok) {
+          this.showProviderProblem(outcome, token);
+          return;
+        }
+        const { mode, assistantLabel, answerRunId, answerUnavailable } = outcome.data;
+        label = assistantLabel;
+
+        if (answerRunId) {
+          this.setResult(
+            { state: 'loading', text: `${assistantLabel} is thinking…`, via: assistantLabel },
+            token,
+          );
+          return;
+        }
+
+        this.setResult(
+          {
+            state: 'ok',
+            text:
+              mode === 'follow-up'
+                ? `Asked in your ${assistantLabel} chat.`
+                : `Opened ${assistantLabel} with your question.`,
+            ...(answerUnavailable ? { note: answerUnavailable } : {}),
+            // Only a missing permission is something the viewer can act on from here.
+            ...(answerUnavailable?.includes('settings') ? { settingsLink: true } : {}),
+          },
+          token,
+        );
+        return;
+      }
+
+      if (message.error && !message.text) {
+        this.setResult({ state: 'error', text: message.error }, token);
+        return;
+      }
+
+      this.setResult(
+        {
+          state: message.done ? 'ok' : 'loading',
+          answer: message.text,
+          // Attribution matters more here than anywhere else in the panel: this text was
+          // written by a model, not looked up in a dictionary.
+          via: label,
+          ...(message.error ? { note: message.error } : {}),
+        },
+        token,
+      );
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (this.askPort === port) this.askPort = null;
+    });
+
+    port.postMessage({
+      type: 'ASK_AI',
+      text: selection.text,
+      lookupText: this.headwordFor(selection),
+      ...(selection.context ? { context: selection.context } : {}),
+      ...(selection.language ? { language: selection.language } : {}),
+    });
   }
 
   private async runPronounce(selection: SubtitleSelection): Promise<void> {
@@ -491,7 +628,19 @@ export class ContextMenu {
 
   /** Begins an action, invalidating any result still in flight from a previous one. */
   private beginRun(): number {
+    // Any answer still in flight belongs to the previous question, so stop waiting for it.
+    this.closeAskPort();
     return ++this.runToken;
+  }
+
+  private closeAskPort(): void {
+    if (!this.askPort) return;
+    try {
+      this.askPort.disconnect();
+    } catch {
+      // Already gone; nothing to release.
+    }
+    this.askPort = null;
   }
 
   private setResult(result: MenuResult, token?: number): void {
@@ -506,7 +655,9 @@ export class ContextMenu {
     panel.setAttribute('role', 'status');
     panel.setAttribute('aria-live', 'polite');
 
-    if (result.details) {
+    if (result.answer !== undefined) {
+      panel.appendChild(this.renderAnswer(result.answer, result.state === 'loading'));
+    } else if (result.details) {
       this.renderDetails(panel, result.details);
     } else if (result.senses) {
       panel.appendChild(this.renderSenses(result.senses));
@@ -515,6 +666,13 @@ export class ContextMenu {
       line.className = CLASS.menuResultText;
       line.textContent = result.text;
       panel.appendChild(line);
+    }
+
+    if (result.note) {
+      const note = document.createElement('p');
+      note.className = CLASS.menuNote;
+      note.textContent = result.note;
+      panel.appendChild(note);
     }
 
     if (result.via) {
@@ -666,6 +824,42 @@ export class ContextMenu {
       via.textContent = `via ${[...new Set(details.sources)].join(', ')}`;
       panel.appendChild(via);
     }
+  }
+
+  /**
+   * A model's reply, as readable prose in a panel built for one-line glosses.
+   *
+   * Rendered as paragraphs with `textContent`, never as markup: this text came out of
+   * another site's DOM, and the one thing that must never happen is it arriving in the
+   * player's page as HTML. The list markers models love (`1.`, `- `, `**bold**`) are left
+   * as written rather than parsed — a half-working Markdown renderer would be more code and
+   * more risk for prose that reads perfectly well as it is.
+   */
+  private renderAnswer(text: string, streaming: boolean): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = CLASS.menuAnswer;
+    if (streaming) wrapper.dataset.ssStreaming = 'true';
+
+    // Strip the emphasis markers rather than render them: asterisks around every other
+    // word are noisier on a 300px panel than the emphasis is worth.
+    const cleaned = text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|\s)\*(\S[^*]*?)\*/g, '$1$2');
+
+    for (const paragraph of cleaned.split(/\n{2,}/)) {
+      const block = paragraph.trim();
+      if (!block) continue;
+      const line = document.createElement('p');
+      // Single newlines inside a block are list items or wrapped lines; keep them.
+      line.textContent = block;
+      wrapper.appendChild(line);
+    }
+
+    if (streaming) {
+      const caret = document.createElement('span');
+      caret.className = CLASS.menuCaret;
+      caret.setAttribute('aria-hidden', 'true');
+      wrapper.appendChild(caret);
+    }
+    return wrapper;
   }
 
   private renderSenses(senses: DictionarySense[]): HTMLElement {

@@ -34,6 +34,15 @@ describe('normalizeSettings', () => {
   it('accepts valid values for the enumerated settings', () => {
     expect(normalizeSettings({ theme: 'dark' }).theme).toBe('dark');
     expect(normalizeSettings({ contextMenuPlacement: 'below' }).contextMenuPlacement).toBe('below');
+    expect(normalizeSettings({ askAiConversation: 'new-chat' }).askAiConversation).toBe('new-chat');
+  });
+
+  it('keeps a hand-written Ask AI prompt, but not a non-string one', () => {
+    // The template is free text, so it has no enum to check — only its type.
+    expect(normalizeSettings({ askAiPrompt: 'What does {word} mean?' }).askAiPrompt).toBe(
+      'What does {word} mean?',
+    );
+    expect(normalizeSettings({ askAiPrompt: 42 }).askAiPrompt).toBe(DEFAULT_SETTINGS.askAiPrompt);
   });
 
   it('rejects an out-of-range value for an enumerated setting', () => {
@@ -42,6 +51,9 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ theme: 'solarized' }).theme).toBe(DEFAULT_SETTINGS.theme);
     expect(normalizeSettings({ contextMenuPlacement: 'left' }).contextMenuPlacement).toBe(
       DEFAULT_SETTINGS.contextMenuPlacement,
+    );
+    expect(normalizeSettings({ askAiConversation: 'same-tab' }).askAiConversation).toBe(
+      DEFAULT_SETTINGS.askAiConversation,
     );
   });
 });

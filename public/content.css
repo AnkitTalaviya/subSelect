@@ -697,6 +697,56 @@
   -webkit-appearance: none !important;
 }
 
+/* ── An assistant's reply ───────────────────────────────────────────────────────
+   Prose, not a status line: this is several sentences someone is going to read over
+   a video, so it gets a comfortable measure and looser leading than the gloss above it. */
+
+.subselect-menu-answer {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 12.5px !important;
+  line-height: 1.55 !important;
+  color: var(--ss-menu-fg) !important;
+  /* Model output arrives with its own line breaks and list markers; keeping them is what
+     makes a numbered answer still read as a numbered answer. */
+  white-space: pre-wrap !important;
+}
+
+.subselect-menu-answer p {
+  margin: 0 0 8px !important;
+  padding: 0 !important;
+}
+
+.subselect-menu-answer p:last-of-type {
+  margin-bottom: 0 !important;
+}
+
+/* A caret while the answer is still being written, so a pause between tokens does not
+   look like it has finished early. */
+.subselect-menu-caret {
+  display: inline-block !important;
+  width: 7px !important;
+  height: 13px !important;
+  margin-left: 2px !important;
+  vertical-align: text-bottom !important;
+  background: var(--ss-menu-accent) !important;
+  border-radius: 1px !important;
+  animation: subselect-caret 1s steps(2, start) infinite;
+}
+
+@keyframes subselect-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subselect-menu-caret {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* ── Actions ────────────────────────────────────────────────────────────────── */
 
 .subselect-menu-items {
@@ -748,6 +798,12 @@
 }
 
 .subselect-menu-item[data-ss-action='translate'] .subselect-menu-icon {
+  color: var(--ss-menu-accent) !important;
+}
+
+/* Ask AI is the other action that answers a question rather than performing a chore, so it
+   carries the accent too — it reads as the pair to Translate instead of a fourth utility. */
+.subselect-menu-item[data-ss-action='ask'] .subselect-menu-icon {
   color: var(--ss-menu-accent) !important;
 }
 

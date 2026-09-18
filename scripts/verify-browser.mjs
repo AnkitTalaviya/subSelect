@@ -14,7 +14,9 @@
  *    so a plain server is never contacted.
  *  - **A mapped host, not localhost.** --host-resolver-rules points www.youtube.com at the
  *    local server so the SHIPPED manifest's content_scripts match with no edit. Testing a
- *    doctored manifest would not tell us much.
+ *    doctored manifest would not tell us much. chatgpt.com is mapped the same way, so the
+ *    Ask AI hand-off can be checked by reading the URL the extension navigated to — without
+ *    a single request leaving the machine, and without depending on OpenAI being up.
  *
  * The self-signed certificate is generated on first run via PowerShell and reused after.
  */
@@ -75,7 +77,7 @@ const browser = spawn(
     `--user-data-dir=${profile}`,
     `--load-extension=${DIST}`,
     '--remote-debugging-port=9222',
-    `--host-resolver-rules=MAP www.youtube.com 127.0.0.1:${PORT}`,
+    `--host-resolver-rules=MAP www.youtube.com 127.0.0.1:${PORT}, MAP chatgpt.com 127.0.0.1:${PORT}`,
     '--ignore-certificate-errors',
     '--no-first-run',
     '--no-default-browser-check',
@@ -167,7 +169,10 @@ try {
     await sw.send('Runtime.enable');
     await sw.eval(
       `chrome.storage.local.get('settings').then(s => chrome.storage.local.set({
-         settings: { ...(s.settings ?? {}), termsAcceptedAt: Date.now(), autoTranslate: true },
+         settings: { ...(s.settings ?? {}), termsAcceptedAt: Date.now(), autoTranslate: true,
+           // Ask AI in a background tab, so pressing it does not take the driver off the
+           // page it is asserting against.
+           askAiEnabled: true, askAiBackground: true },
        })).then(() => 'ok')`,
     );
     sw.ws.close();
@@ -388,12 +393,20 @@ try {
     check('phrase highlight is continuous', bridged >= dragged - 1, `${bridged} gaps bridged`);
     console.log('   phrase:', await cdp.eval(`[...document.querySelectorAll('[data-ss-selected="true"]')].map(e=>e.textContent).join(' ')`));
 
-    // Every menu action must actually run when clicked.
+    // What the menu is about to be asked to hand over, so the Ask AI URL can be checked
+    // against it below.
+    const askTerm = await cdp.eval(
+      "document.querySelector('.subselect-menu-term')?.textContent ?? ''",
+    );
+
+    // Every menu action must actually run when clicked. Ask AI goes last: it opens a tab,
+    // and leaving that until the others are done keeps the target list simple to read.
     for (const [action, label] of [
       ['translate', 'Translate'],
       ['pronounce', 'Pronounce'],
       ['save', 'Save'],
       ['copy', 'Copy'],
+      ['ask', 'Ask AI'],
     ]) {
       // Drop any previous panel first: it sits above the buttons, so removing it after
       // measuring would move them out from under the click.
@@ -430,6 +443,117 @@ try {
         if (panel && !panel.startsWith('loading')) break;
       }
       check(`menu action "${label}" responds`, Boolean(panel), panel || 'no result panel');
+    }
+
+    /*
+     * Ask AI actually handed the question over.
+     *
+     * "The menu said something" is not enough for this one: the whole feature is the URL,
+     * so this reads the tab the extension opened and checks the question that went into it.
+     * chatgpt.com is mapped to the local server, so the tab lands on a 404 and nothing is
+     * sent to OpenAI — the URL is still exactly the one a real browser would have followed.
+     */
+    // ChatGPT is the default assistant and nothing has been granted here, so the URL route
+    // is the one under test. Which assistant gets picked from open tabs cannot be exercised
+    // headless: that needs a host permission, and permissions.request rejects a synthesized
+    // gesture. See the Ask AI notes in README.
+    const askTab = (await devtools('/json/list')).find(
+      (t) => t.type === 'page' && t.url.startsWith('https://chatgpt.com/?q='),
+    );
+    check('Ask AI opened the default assistant', Boolean(askTab), askTab ? '' : 'no chatgpt.com tab');
+
+    if (askTab) {
+      const asked = new URL(askTab.url).searchParams.get('q') ?? '';
+      console.log('   asked:', JSON.stringify(asked.slice(0, 90) + (asked.length > 90 ? '…' : '')));
+      check('the question carries the selected words', asked.includes(askTerm.trim()), askTerm);
+      // The caption around the word is the reason to ask from a subtitle at all (§15).
+      const caption = await cdp.eval(
+        "document.querySelector('.subselect-menu-context')?.textContent ?? ''",
+      );
+      check(
+        'the question carries the sentence it came from',
+        !caption.trim() || asked.includes(caption.trim()),
+        caption.trim() ? '' : 'selection was the whole caption',
+      );
+      check('no placeholder was left unfilled', !/\{(word|sentence|language|target)\}/.test(asked));
+
+      /*
+       * Asking again must reuse the tab.
+       *
+       * Without this the feature costs a tab per word, which over an episode is the kind of
+       * thing that gets an extension uninstalled. (The follow-up route — typing into the
+       * open conversation rather than navigating it — needs the chatgpt.com grant, and
+       * chrome.permissions.request will not accept a synthesized gesture, so what is
+       * verified here is the tab reuse that happens either way.)
+       */
+      await cdp.eval("document.querySelector('.subselect-menu-result')?.remove(); 1");
+      await sleep(150);
+      const again = JSON.parse(
+        await cdp.eval(`(()=>{const b=document.querySelector('[data-ss-action="ask"]');
+          const r=b.getBoundingClientRect();
+          return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()`),
+      );
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await cdp.send('Input.dispatchMouseEvent', {
+          type, x: again.x, y: again.y, button: 'left', clickCount: 1,
+          buttons: type === 'mousePressed' ? 1 : 0,
+        });
+        await sleep(60);
+      }
+      await sleep(2500);
+
+      const chatTabs = (await devtools('/json/list')).filter(
+        (t) => t.type === 'page' && t.url.startsWith('https://chatgpt.com/'),
+      );
+      check('asking again reuses the same tab', chatTabs.length === 1,
+        `${chatTabs.length} chatgpt.com tabs open`);
+
+      /*
+       * A tab the viewer has taken over is only protected when the assistant is ticked.
+       *
+       * Without that grant Chrome hides the tab's URL, and a bare "it navigated" signal
+       * cannot tell the assistant moving itself — which every one of them does once an
+       * answer starts — from the viewer going elsewhere. Guessing meant forgetting the tab
+       * after every single question and opening a fresh one for the next, which is much the
+       * worse failure. So here, un-granted, the tab is deliberately reused.
+       *
+       * The granted case, where the check is exact and a repurposed tab is left alone, needs
+       * a host permission that `permissions.request` will not hand to a synthesized gesture;
+       * it is verified by hand. See the Ask AI notes in README.
+       */
+      if (chatTabs.length === 1) {
+        const repurposed = chatTabs[0];
+        const other = new CDP(repurposed.webSocketDebuggerUrl);
+        await other.ready;
+        await other.send('Page.enable');
+        await other.send('Page.navigate', { url: 'https://www.youtube.com/dom-captions.html' });
+        await sleep(2500);
+
+        await cdp.eval("document.querySelector('.subselect-menu-result')?.remove(); 1");
+        await sleep(150);
+        for (const type of ['mousePressed', 'mouseReleased']) {
+          await cdp.send('Input.dispatchMouseEvent', {
+            type, x: again.x, y: again.y, button: 'left', clickCount: 1,
+            buttons: type === 'mousePressed' ? 1 : 0,
+          });
+          await sleep(60);
+        }
+        await sleep(2500);
+
+        const after = await devtools('/json/list');
+        check('with no grant, the remembered tab is reused rather than abandoned',
+          after.filter((t) => t.type === 'page' && t.url.startsWith('https://chatgpt.com/')).length === 1,
+          `${after.filter((t) => t.type === 'page' && t.url.startsWith('https://chatgpt.com/')).length} tabs`);
+
+        other.ws.close();
+      }
+
+      for (const tab of (await devtools('/json/list')).filter(
+        (t) => t.type === 'page' && t.url.startsWith('https://chatgpt.com/'),
+      )) {
+        await fetch(`http://127.0.0.1:9222/json/close/${tab.id}`).catch(() => {});
+      }
+      await sleep(400);
     }
 
     /*
@@ -716,6 +840,106 @@ try {
         }
       } else {
         console.log('   (could not open a second tab; tab-switch check skipped)');
+      }
+    }
+
+    /*
+     * Turning SubSelect off from somewhere else must not start the video.
+     *
+     * `enabled: false` is written by the Alt+Shift+S shortcut, the popup switch and the
+     * settings page — none of which has to happen in the tab holding the video. It reaches
+     * every tab through storage, stops each engine, and teardown used to resume any video
+     * paused for reading. The result was sound starting out of a background tab the viewer
+     * had left, which is the hardest kind of noise to trace to its source.
+     *
+     * Needs a genuinely hidden tab, so it only runs with a real window.
+     */
+    if (!process.env.SUBSELECT_HEADFUL) {
+      console.log('   (background-resume check needs a real window: SUBSELECT_HEADFUL=1)');
+    } else {
+      const bg = await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+
+      if (!bg) {
+        console.log('   (could not open a second tab; background-resume check skipped)');
+      } else {
+        const bgCdp = new CDP(bg.webSocketDebuggerUrl);
+        await bgCdp.ready;
+        await bgCdp.send('Page.enable');
+
+        // Put a word back on screen and pause for reading.
+        await cdp.eval('document.querySelector("video").play(); 1');
+        await sleep(400);
+        const word = JSON.parse(
+          await cdp.eval(`(()=>{const w=document.querySelectorAll('.subselect-word');
+            if(!w.length) return JSON.stringify({found:false});
+            const r=w[0].getBoundingClientRect();
+            return JSON.stringify({found:true,x:r.x+r.width/2,y:r.y+r.height/2})})()`),
+        );
+        if (word.found) {
+          for (const type of ['mousePressed', 'mouseReleased']) {
+            await cdp.send('Input.dispatchMouseEvent', {
+              type, x: word.x, y: word.y, button: 'left', clickCount: 1,
+              buttons: type === 'mousePressed' ? 1 : 0,
+            });
+            await sleep(70);
+          }
+          await sleep(700);
+        }
+
+        // Bring the other tab forward until this one genuinely reports hidden — asserting
+        // against a tab that is still visible would prove nothing either way.
+        let wentHidden = false;
+        for (let i = 0; i < 12 && !wentHidden; i++) {
+          await bgCdp.send('Page.bringToFront').catch(() => {});
+          await sleep(500);
+          wentHidden = (await cdp.eval('document.visibilityState')) === 'hidden';
+        }
+
+        const before = JSON.parse(
+          await cdp.eval(`(()=>{const v=document.querySelector('video');
+            return JSON.stringify({paused:v.paused, visibility:document.visibilityState})})()`),
+        );
+
+        if (!wentHidden || !before.paused) {
+          console.log(`   (skipped: hidden=${wentHidden} paused=${before.paused})`);
+        } else {
+          const sw2 = (await devtools('/json/list')).find(
+            (t) => t.type === 'service_worker' && t.url.includes('service-worker.js'),
+          );
+          const swCdp = new CDP(sw2.webSocketDebuggerUrl);
+          await swCdp.ready;
+          await swCdp.send('Runtime.enable');
+          await swCdp.eval(`chrome.storage.local.get('settings').then(s => chrome.storage.local.set({
+            settings: { ...s.settings, enabled: false } })).then(()=>'ok')`);
+          await sleep(1500);
+
+          const after = JSON.parse(
+            await cdp.eval(`(()=>{const v=document.querySelector('video');
+              return JSON.stringify({paused:v.paused, visibility:document.visibilityState})})()`),
+          );
+          check('turning SubSelect off elsewhere does not start a hidden tab’s video',
+            after.paused, after.paused ? '' : 'VIDEO STARTED IN A BACKGROUND TAB');
+
+          // Put everything back for the checks that follow.
+          await swCdp.eval(`chrome.storage.local.get('settings').then(s => chrome.storage.local.set({
+            settings: { ...s.settings, enabled: true } })).then(()=>'ok')`);
+          swCdp.ws.close();
+          await sleep(1200);
+        }
+
+        await cdp.send('Page.bringToFront').catch(() => {});
+        await sleep(800);
+        bgCdp.ws.close();
+        await fetch(`http://127.0.0.1:9222/json/close/${bg.id}`).catch(() => {});
+        await sleep(600);
+
+        // The engine was stopped and restarted, so wait for it to re-attach.
+        for (let i = 0; i < 20; i++) {
+          if ((await cdp.eval('document.querySelectorAll(".subselect-word").length')) > 0) break;
+          await sleep(500);
+        }
       }
     }
 

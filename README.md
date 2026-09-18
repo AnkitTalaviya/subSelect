@@ -111,8 +111,8 @@ POST  { "text": "…", "source": "de", "target": "en", "context": "…" }
 | `Esc` | Closes the menu and clears the selection |
 | `Alt` + `Shift` + `S` | Turns interactive subtitles on and off |
 
-The menu offers **Translate**, **Pronounce**, **Save** and **Copy**. Save and Copy always
-work, with no provider and no network.
+The menu offers **Translate**, **Ask AI**, **Pronounce**, **Save** and **Copy**. Save and
+Copy always work, with no provider and no network.
 
 **Translate opens one panel with everything known about the word** — asking three sources
 at once rather than making you click twice and wait twice:
@@ -145,13 +145,91 @@ page templates. Grammar details are **German-only** so far — a generic extract
 half-worked everywhere would be worse than one that is right for the language the product
 is built around. Every block is omitted when its data is missing; nothing is invented.
 
+### Ask AI
+
+The panel above tells you what a word means. **Ask AI** is for the question it cannot answer
+— why the word is in the shape this sentence put it in — and it is a different kind of thing
+from every other action here.
+
+SubSelect calls no API and holds no key. Pressing the button opens an assistant you are
+already signed into, with the word and the caption around it already asked. What was sent is
+therefore visible to you, because it is the message in your own chat history, and it goes to
+that vendor under your account rather than through anything of ours. It happens only on a
+press — never on selection, and never in the background.
+
+**It goes to whichever assistant you have open.** ChatGPT, Claude, Gemini, Perplexity,
+Copilot and Grok are built in, and you can point it at your own — a self-hosted Open WebUI
+or LibreChat, a company deployment, anything you sign into. If Claude is the tab you were
+last in, the question goes to Claude; the assistant configured in Settings is only the
+fallback for when none is open. "Most recently used" is the browser's own `lastAccessed`
+record, not anything SubSelect tracks.
+
+**What it can see is narrower than it sounds.** Finding those tabs uses
+`tabs.query({ url })`, which returns *only* tabs whose origin you granted. Every other tab
+is invisible to it — not the URL, not the title, not that the tab exists. Chrome enforces
+that, which is why this works without the `tabs` permission and its "read your browsing
+history" warning. Each assistant is a separate tick in Settings, and ticking one is what
+asks Chrome for that site.
+
+Access also buys the better delivery. With it, the question is typed into the composer and
+**confirmed sent**, which works for every assistant including one that publishes no URL
+entry point. Without it, SubSelect falls back to a `?q=` URL, which ChatGPT and Perplexity
+publish for search-engine integration and the others accept by convention — Gemini takes
+none at all, so Settings says plainly that it has to be ticked first.
+
+**The answer can come back to the panel.** By default the reply is read out of the
+assistant's page and rendered under the word, so you never leave the player at all. That
+needs the assistant ticked — reading the reply takes the same access as asking does — and
+without a tick it degrades to opening the assistant and says which tick would fix it.
+`Where the answer appears` in Settings switches between the two.
+
+Questions keep going into the same chat, so by the third word of an episode the assistant
+already knows what is being watched and in which language. **One tab, reused** — never a new
+one per question. That reuse is deliberately sticky: an assistant navigates itself once an
+answer starts, and with no permission for that site Chrome hides the URL, so "it navigated"
+cannot be told apart from "the viewer went elsewhere". Guessing meant forgetting the tab
+after every single question and opening a fresh one for the next. Ticking the assistant
+makes the URL readable and the check exact, and then a tab you have repurposed is left alone.
+A tab SubSelect opened is the only one it will ever navigate: adding a message to a
+conversation you were having is one thing, replacing it with a fresh one is not ours to do.
+
+Driving someone else's composer will break the day any of them reshuffles their DOM, so it
+is written to notice: it confirms the composer emptied rather than assuming the click
+landed, and falls back through the other routes for every way it can fail. A redesign at one
+vendor costs a new chat per word there, not a broken button.
+
+The question itself is a template in Settings, using `{word}`, `{sentence}`, `{language}`
+and `{target}`. Anything else in braces is sent as you wrote it.
+
 The shortcut defaults to `Alt+Shift+S`, not the brief's `Alt+S`. Extension commands
 intercept the key before the page sees it, so plain `Alt+S` would silently break any site
 that uses it. Rebind it at `chrome://extensions/shortcuts`.
 
+Pausing is the one thing SubSelect does *to* the player, so it is tightly bounded: only a
+video SubSelect paused itself is ever resumed, pressing play while reading hands control
+back for good, and playback is never started in a tab you are not looking at. That last rule
+exists because teardown resumes — and the engine is torn down by anything that writes
+`enabled: false`, including the keyboard shortcut and the popup switch, neither of which has
+to happen in the tab holding the video. Without the rule, switching away and turning
+SubSelect off set sound playing out of a background tab.
+
 Both subtitle sources are **verified end to end in a real browser** by
 `npm run verify:browser` — overlay alignment, click, drag, menu, caption changes and
-Escape. Per-site support beyond the test pages is still unmeasured;
+Escape. `chatgpt.com` is mapped to the local test server there, so the Ask AI hand-off is
+checked by reading the URL the extension actually navigated to — that it carries the word,
+the sentence and no unfilled placeholder, that a second question reuses the tab, and that a
+tab the viewer has repurposed is left alone — without a request leaving the machine.
+
+Two Ask AI paths are **not** covered there, both for the same reason: they need a granted
+host permission, and `permissions.request` rejects a synthesized user gesture, so a headless
+run cannot get one. Those are picking the assistant from open tabs, and typing into a
+composer. Both were confirmed to work against a real host permission in a headful run
+(`tabs.query({url})` returns the tab with its URL and `lastAccessed`; an un-granted origin
+returns nothing at all), but the end-to-end behaviour is verified by hand. Note that
+**headless withholds host permissions entirely** — `tab.url` comes back undefined and
+injection is refused even for an origin the manifest declares — so never conclude anything
+about permissions from a headless run. Per-site support beyond the test pages is still
+unmeasured;
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) records measurements, not predictions.
 
 Read before contributing:
@@ -225,8 +303,13 @@ listed with the single thing it is for.
 | --- | --- |
 | `storage` | Settings, on this device. Phase 4 adds the vocabulary list, also on this device. |
 | `activeTab` | Lets you try SubSelect on a page that is not in the list below, from the toolbar button. Temporary, and only after you click. |
-| `scripting` | Starts SubSelect on a site you explicitly enabled, and keeps it working there after a reload. |
-| `optional_host_permissions: *://*/*` | **Not granted at install.** Only ever requested one origin at a time, when you press *Enable on this site*. |
+| `scripting` | Starts SubSelect on a site you explicitly enabled, and keeps it working there after a reload. Also injects the one function that types an Ask AI question into an open chat — at the moment you press the button, and not otherwise. |
+| `optional_host_permissions: *://*/*` | **Not granted at install.** Only ever requested one origin at a time: when you press *Enable on this site*, or when you tick an assistant under *Ask AI*. |
+
+Deliberately **not** requested for Ask AI: the `tabs` permission. It would make picking the
+assistant from your open tabs trivial and need no per-site ticking — at the price of
+"read your browsing history" at install and the ability to see every tab you have. Ticking
+assistants individually buys the same feature while leaving everything else invisible.
 
 Content scripts run automatically only on sites where a video player is expected:
 YouTube, Netflix, Prime Video, Disney+, Hotstar/JioHotstar, Twitch, Vimeo, Crunchyroll,
@@ -265,7 +348,7 @@ Declining is a first-class option: selection, copy and save need no network what
 API keys are stored in this browser's local storage and sent only to the endpoint you
 entered them for. They never leave with an export.
 
-Two caveats worth stating plainly:
+Three caveats worth stating plainly:
 
 - **Speech synthesis.** Chrome exposes both offline (OS) voices and Google's network
   voices. SubSelect always prefers an offline voice for the subtitle language; where none
@@ -273,6 +356,12 @@ Two caveats worth stating plainly:
   to be spoken. The menu says so at the moment it applies, and Pronounce can be turned off.
 - **Wikimedia recordings** are off by default and, once approved, send the selected word to
   the relevant Wiktionary to find a recording.
+- **Ask AI** sits outside the two gates above, because it is not a request SubSelect makes.
+  Pressing it opens an assistant as *you*, with the word and its caption in the message box —
+  so the text goes to that vendor under your own account and terms, and you can see exactly
+  what went. It never fires on selection, only on a press, and turning the button off in
+  Settings removes it entirely. If you would rather SubSelect never offered it, that switch
+  is the whole answer.
 
 Where a player's subtitles cannot be reached legitimately, SubSelect says so and stops:
 
@@ -313,7 +402,9 @@ you had already paused is left alone. Turn it off with *Pause the video while I 
 
 ```
 src/
-├── background/service-worker.ts   routing, defaults, dynamic script registration
+├── background/
+│   ├── service-worker.ts          routing, defaults, dynamic script registration
+│   └── askAssistant.ts            Ask AI tab picking + the injected composer driver
 ├── content/
 │   ├── index.ts                   per-frame entry
 │   ├── SubtitleEngine.ts          lifecycle owner; the only thing that starts/stops work
@@ -343,6 +434,8 @@ src/
 ├── popup/                         on/off, language, saved count, page status
 ├── options/                       full settings page
 └── shared/                        types, messages, settings, storage, text, constants
+    ├── askAi.ts                   the prompt template, pure and shared
+    └── assistants.ts              the assistant catalogue + tab matching, pure and shared
 ```
 
 ## License

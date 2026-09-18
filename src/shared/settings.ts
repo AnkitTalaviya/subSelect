@@ -1,4 +1,6 @@
 import type { LanguageCode } from './constants';
+import { DEFAULT_ASK_AI_PROMPT } from './askAi';
+import { BUILT_IN_IDS } from './assistants';
 
 /**
  * User settings.
@@ -72,6 +74,72 @@ export interface Settings {
   /** Double-click a word to select the whole caption. */
   doubleClickToSelect: boolean;
 
+  /**
+   * Ask AI (§65) — offer the action that hands a word to the user's own ChatGPT.
+   *
+   * Unlike every other provider setting, nothing here configures a service SubSelect
+   * calls. It opens a tab as the user, in their own signed-in session; see
+   * `shared/askAi.ts` for why that is a different kind of thing.
+   */
+  askAiEnabled: boolean;
+  /**
+   * Assistants SubSelect may look for among open tabs and continue a chat in.
+   *
+   * Each one needs that site's permission, so this list only ever contains assistants the
+   * user ticked and Chrome granted. An empty list is normal and still works: questions then
+   * open a new chat in `askAiAssistant` by URL, which needs no permission at all.
+   */
+  askAiAllowed: string[];
+  /**
+   * Prefer an assistant the user already has open over the configured one.
+   *
+   * This is what makes the button follow attention rather than a setting: if Claude is the
+   * tab you were last looking at, the question goes to Claude. Only tabs for assistants in
+   * `askAiAllowed` are visible to SubSelect at all — Chrome enforces that, not us.
+   */
+  askAiPreferOpenTab: boolean;
+  /** Which assistant to open when none is already open. */
+  askAiAssistant: string;
+  /** Label for the user's own assistant; falls back to its hostname. */
+  askAiCustomName: string;
+  /**
+   * URL of the user's own assistant — a self-hosted Open WebUI, LibreChat, a company
+   * deployment. Containing `{prompt}` makes it an entry point that carries the question;
+   * without it, the page is opened and the question typed in.
+   */
+  askAiCustomUrl: string;
+  /**
+   * `follow-up` keeps asking in the chat that is already going, so the conversation builds
+   * up context across an episode. `new-chat` starts a clean one every time, for anyone who
+   * would rather not have one thread full of unrelated words.
+   *
+   * Follow-ups need the assistant's permission, because continuing an open conversation
+   * means putting text in its composer. Without it this degrades to `new-chat` rather than
+   * failing.
+   */
+  askAiConversation: 'follow-up' | 'new-chat';
+  /**
+   * Where the answer shows up.
+   *
+   * `panel` reads the reply back out of the assistant's page and renders it under the word,
+   * so the viewer never leaves the player — which is the whole point of the extension. It
+   * needs that assistant ticked, because reading the page needs its permission; without the
+   * tick it falls back to `assistant` and says why.
+   *
+   * `assistant` is the older behaviour: the question is handed over and you go and read it
+   * there, with the full interactive chat.
+   */
+  askAiAnswerIn: 'panel' | 'assistant';
+  /**
+   * Send the question without leaving the video. Nothing announces the answer.
+   *
+   * Only meaningful when the answer appears in the assistant — panel answers never take the
+   * viewer anywhere, so there is nothing to suppress.
+   */
+  askAiBackground: boolean;
+  /** Prompt template; see `ASK_AI_PLACEHOLDERS` for the tokens it may use. */
+  askAiPrompt: string;
+
   /** Show the context menu when something is selected (§16). */
   showContextMenu: boolean;
   /**
@@ -109,6 +177,16 @@ export const DEFAULT_SETTINGS: Settings = {
   dictionaryEndpoint: '',
   pronunciationProvider: 'wikimedia',
   termsAcceptedAt: 0,
+  askAiEnabled: true,
+  askAiAllowed: [],
+  askAiPreferOpenTab: true,
+  askAiAssistant: 'chatgpt',
+  askAiCustomName: '',
+  askAiCustomUrl: '',
+  askAiConversation: 'follow-up',
+  askAiAnswerIn: 'panel',
+  askAiBackground: false,
+  askAiPrompt: DEFAULT_ASK_AI_PROMPT,
   saveContext: true,
   clickToSelect: true,
   pauseOnSelect: true,
@@ -131,6 +209,9 @@ const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
   translationProvider: ['auto', 'none', 'chrome-ondevice', 'libretranslate', 'lingva', 'deepl', 'custom'],
   dictionaryProvider: ['auto', 'none', 'wiktionary', 'free-dictionary', 'custom'],
   pronunciationProvider: ['browser', 'wikimedia'],
+  askAiConversation: ['follow-up', 'new-chat'],
+  askAiAnswerIn: ['panel', 'assistant'],
+  askAiAssistant: [...BUILT_IN_IDS, 'custom'],
 };
 
 /**
@@ -162,6 +243,14 @@ export function normalizeSettings(stored: unknown): Settings {
 
     Object.assign(result, { [key]: value });
   }
+
+  /*
+   * `askAiAllowed` needs more than the generic array check above: its members name
+   * assistants, and an id we do not have would be turned into a permission request for an
+   * origin that does not exist. Unknown entries are dropped rather than carried.
+   */
+  const known = new Set<string>([...BUILT_IN_IDS, 'custom']);
+  result.askAiAllowed = [...new Set(result.askAiAllowed.filter((id) => known.has(id)))];
 
   result.version = DEFAULT_SETTINGS.version;
   return result;

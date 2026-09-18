@@ -6,6 +6,7 @@ import type {
   WordDetails,
 } from '../providers/types';
 import type { PronunciationResult } from '../providers/pronunciation/providers';
+import type { AskAiResult } from './askAi';
 
 /**
  * Every message crossing a runtime boundary is a member of this union (§55). There is no
@@ -43,6 +44,15 @@ export type ExtensionMessage =
       language?: string;
     }
   | { type: 'FIND_PRONUNCIATION'; text: string; language?: string }
+  // Ask AI has to be routed here for the same reason OPEN_OPTIONS is: only the worker can
+  // open and drive tabs, and only the worker can ask whether chatgpt.com has been granted.
+  | {
+      type: 'ASK_AI';
+      text: string;
+      lookupText?: string;
+      context?: string;
+      language?: string;
+    }
   | { type: 'SAVE_WORD'; word: SaveWordRequest }
   | { type: 'GET_VOCABULARY_COUNT' }
   // Content scripts cannot open the options page themselves, and cannot call
@@ -66,6 +76,7 @@ export interface MessageResponseMap {
   LOOKUP_WORD: ProviderOutcome<DictionaryResult>;
   GET_WORD_DETAILS: ProviderOutcome<WordDetails>;
   FIND_PRONUNCIATION: ProviderOutcome<PronunciationResult>;
+  ASK_AI: ProviderOutcome<AskAiResult>;
   SAVE_WORD: ProviderOutcome<{ saved: true; total: number }>;
   GET_VOCABULARY_COUNT: number;
   OPEN_OPTIONS: void;
@@ -90,6 +101,23 @@ export async function sendMessage<T extends ExtensionMessage>(
     return null;
   }
 }
+
+/**
+ * The channel Ask AI streams a reply back down.
+ *
+ * A port, not `chrome.tabs.sendMessage`, and the reason is a hard platform constraint:
+ * `sender.tab` is populated **only** for a tab the extension has access to. Content-script
+ * `matches` are not host permissions, so on the sites SubSelect runs on by default the
+ * worker is handed `{ id, url, origin }` and nothing else — there is no tab id to send to.
+ * A port replies to exactly the sender that opened it, needs no permission, and keeps the
+ * service worker alive for as long as the model takes to answer.
+ */
+export const ASK_AI_PORT = 'subselect-ask-ai';
+
+/** What travels back up an Ask AI port: the hand-off result, then the reply as it grows. */
+export type AskAiPortMessage =
+  | { kind: 'result'; outcome: ProviderOutcome<AskAiResult> }
+  | { kind: 'answer'; text: string; done: boolean; error?: string };
 
 /** Typed wrapper over chrome.tabs.sendMessage, for popup → content traffic. */
 export async function sendToTab<T extends ExtensionMessage>(

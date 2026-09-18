@@ -153,6 +153,118 @@
         </div>
       </section>
 
+      <section aria-labelledby="h-ask">
+        <h2 id="h-ask">Ask AI</h2>
+        <p class="note lead">
+          Adds an <strong>Ask AI</strong> button to the menu. It does not call an API and needs
+          no key — it opens an assistant you are already signed into, with the word and the
+          subtitle line already asked. You see exactly what was sent, because it is the message
+          in your own chat history. Nothing is sent until you press the button.
+        </p>
+        <div class="card">
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiEnabled">Offer Ask AI</label>
+              <p class="hint">Uses your own account with whichever assistant you pick. A free account is enough.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="askAiEnabled" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <div class="field stacked" id="ask-allowed-field">
+            <div class="field-text">
+              <label id="ask-allowed-label">Assistants SubSelect may use</label>
+              <p class="hint">
+                Ticking one asks Chrome for access to that site. That is what lets SubSelect
+                notice you have it open and continue the conversation there. Until you tick
+                one, SubSelect cannot see any of your tabs — Chrome does not show them to it.
+              </p>
+            </div>
+            <div class="assistant-list" id="ask-allowed-list" role="group" aria-labelledby="ask-allowed-label"></div>
+          </div>
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiPreferOpenTab">Ask in whichever one I have open</label>
+              <p class="hint" id="ask-prefer-hint"></p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="askAiPreferOpenTab" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiAssistant">When none is open, use</label>
+              <p class="hint" id="ask-assistant-hint"></p>
+            </div>
+            <select id="askAiAssistant"></select>
+          </div>
+          <div class="field stacked" id="ask-custom-field" hidden>
+            <div class="field-text">
+              <label for="askAiCustomUrl">Your own assistant</label>
+              <p class="hint">
+                A self-hosted Open WebUI or LibreChat, or any chat page you sign into. Put
+                <code>{prompt}</code> in the URL if it accepts a question that way
+                (<code>https://chat.example.com/?q={prompt}</code>); leave it out and SubSelect
+                will open the page and type the question in, which needs the site ticked above.
+              </p>
+            </div>
+            <div class="custom-assistant">
+              <input type="text" id="askAiCustomName" placeholder="Name (optional)" spellcheck="false" />
+              <input type="url" id="askAiCustomUrl" placeholder="https://chat.example.com/?q={prompt}" spellcheck="false" />
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiAnswerIn">Where the answer appears</label>
+              <p class="hint" id="ask-answer-hint"></p>
+            </div>
+            <select id="askAiAnswerIn">
+              <option value="panel">In the panel, over the video</option>
+              <option value="assistant">In the assistant's own tab</option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiConversation">Where each question goes</label>
+              <p class="hint" id="ask-conversation-hint"></p>
+            </div>
+            <select id="askAiConversation">
+              <option value="follow-up">Keep asking in the same chat</option>
+              <option value="new-chat">Start a new chat every time</option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="field-text">
+              <label for="askAiBackground">Ask without leaving the video</label>
+              <p class="hint">
+                Sends the question to a background tab and keeps you on the player. Nothing
+                tells you when the answer has arrived.
+              </p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="askAiBackground" />
+              <span class="track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <div class="field stacked">
+            <div class="field-text">
+              <label for="askAiPrompt">What to ask</label>
+              <p class="hint">
+                <code>{word}</code>, <code>{sentence}</code>, <code>{language}</code> and
+                <code>{target}</code> are filled in when you press the button. Anything else
+                in braces is sent as you wrote it.
+              </p>
+            </div>
+            <!-- Sized so the shipped question fits without scrolling: a template you have
+                 to scroll to read is one you will not check before it is sent. -->
+            <textarea id="askAiPrompt" rows="12" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <button type="button" class="ghost" id="reset-ask-prompt">Reset the question</button>
+      </section>
+
       <section aria-labelledby="h-vocabulary">
         <h2 id="h-vocabulary">Vocabulary</h2>
         <div class="card">
@@ -197,7 +309,8 @@
               <p class="hint">
                 Pauses when you select a word and resumes when you clear it. Only ever
                 resumes a video SubSelect paused itself — press play at any time and it stays
-                out of the way.
+                out of the way. It also never starts a video in a tab you have left, so
+                switching away and turning SubSelect off cannot set sound playing behind you.
               </p>
             </div>
             <label class="switch">
@@ -330,6 +443,36 @@
             SubSelect makes no network requests at all. When one is set up, the text you
             selected — and the subtitle line around it — is sent to that provider when you
             press Translate or Definition, and never at any other time.
+          </dd>
+
+          <dt>Ask AI</dt>
+          <dd>
+            A separate thing from the providers above, and worth reading as one. SubSelect
+            does not call an API and holds no key: pressing the button opens an assistant you
+            are already signed into, with the word and the subtitle line already asked. What
+            is sent is therefore visible to you — it is the message in your own chat history —
+            and it goes to that company under your account and their terms, not ours. It
+            happens only when you press the button, never on selection. Turning the button off
+            in <em>Ask AI</em> above removes it entirely.
+          </dd>
+
+          <dt>Answers shown in the panel</dt>
+          <dd>
+            When the answer appears over the video, SubSelect reads that one reply out of the
+            assistant's page after you press the button, and shows it to you. It reads nothing
+            else from the conversation, keeps no copy, and does nothing on that site at any
+            other moment. Switch <em>Where the answer appears</em> to the assistant's own tab
+            if you would rather it never read the page at all.
+          </dd>
+
+          <dt>Your open tabs</dt>
+          <dd>
+            Ticking an assistant lets SubSelect ask Chrome one question, at the moment you
+            press the button: do you have a tab open for that assistant? Chrome answers only
+            for the sites you ticked. Every other tab — its address, its title, the fact that
+            it exists — is never shown to SubSelect. That is why access is asked one assistant
+            at a time rather than through the browser-wide permission that would otherwise be
+            needed to read your tabs.
           </dd>
 
           <dt>API keys</dt>

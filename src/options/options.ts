@@ -1,6 +1,15 @@
 import { SUPPORTED_LANGUAGES, type LanguageCode } from '@shared/constants';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { getSettings, setSettings } from '@shared/storage';
+import { DEFAULT_ASK_AI_PROMPT } from '@shared/askAi';
+import {
+  ASSISTANTS,
+  assistantById,
+  customAssistant,
+  isAssistantGranted,
+  originsFor,
+  type Assistant,
+} from '@shared/assistants';
 import { defaultOrigins } from '../providers/registry';
 import {
   DEFAULT_ENDPOINTS,
@@ -39,6 +48,18 @@ const controls = {
   theme: el<HTMLSelectElement>('theme'),
   highlightColor: el<HTMLInputElement>('highlightColor'),
   highlightAlpha: el<HTMLInputElement>('highlightAlpha'),
+};
+
+const askControls = {
+  askAiEnabled: el<HTMLInputElement>('askAiEnabled'),
+  askAiPreferOpenTab: el<HTMLInputElement>('askAiPreferOpenTab'),
+  askAiAssistant: el<HTMLSelectElement>('askAiAssistant'),
+  askAiCustomName: el<HTMLInputElement>('askAiCustomName'),
+  askAiCustomUrl: el<HTMLInputElement>('askAiCustomUrl'),
+  askAiAnswerIn: el<HTMLSelectElement>('askAiAnswerIn'),
+  askAiConversation: el<HTMLSelectElement>('askAiConversation'),
+  askAiBackground: el<HTMLInputElement>('askAiBackground'),
+  askAiPrompt: el<HTMLTextAreaElement>('askAiPrompt'),
 };
 
 const providerControls = {
@@ -119,8 +140,190 @@ function render(settings: Settings): void {
   providerControls.pronunciationProvider.value = settings.pronunciationProvider;
   providerControls.saveContext.checked = settings.saveContext;
 
+  askControls.askAiEnabled.checked = settings.askAiEnabled;
+  askControls.askAiPreferOpenTab.checked = settings.askAiPreferOpenTab;
+  askControls.askAiAnswerIn.value = settings.askAiAnswerIn;
+  askControls.askAiConversation.value = settings.askAiConversation;
+  askControls.askAiBackground.checked = settings.askAiBackground;
+  if (document.activeElement !== askControls.askAiCustomName) {
+    askControls.askAiCustomName.value = settings.askAiCustomName;
+  }
+  if (document.activeElement !== askControls.askAiCustomUrl) {
+    askControls.askAiCustomUrl.value = settings.askAiCustomUrl;
+  }
+  // Skipped while the box has focus: re-rendering after every keystroke-triggered save
+  // would move the caret to the end of the text mid-sentence.
+  if (document.activeElement !== askControls.askAiPrompt) {
+    askControls.askAiPrompt.value = settings.askAiPrompt;
+  }
+
   applyTheme(settings.theme);
   void renderProviders(settings);
+  void renderAskAi(settings);
+}
+
+// ── Ask AI ────────────────────────────────────────────────────────────────────
+
+/** Assistants the user ticked *and* Chrome still grants. Revocation happens elsewhere. */
+async function grantedAssistants(settings: Settings): Promise<Set<string>> {
+  const custom = customAssistant({
+    name: settings.askAiCustomName,
+    url: settings.askAiCustomUrl,
+  });
+  const known = custom ? [...ASSISTANTS, custom] : [...ASSISTANTS];
+
+  const granted = new Set<string>();
+  for (const assistant of known) {
+    if (!settings.askAiAllowed.includes(assistant.id)) continue;
+    const ok = await isAssistantGranted(assistant, (origins) =>
+      chrome.permissions.contains({ origins }),
+    );
+    if (ok) granted.add(assistant.id);
+  }
+  return granted;
+}
+
+/**
+ * The assistant checklist, and what ticking one actually buys.
+ *
+ * Worth being precise about, because the permission is narrower than it sounds. SubSelect
+ * does not read the conversation and does not run on the page: it asks Chrome which tabs
+ * are on that site, and injects one function at the moment of a press to type the question.
+ * Everything else about the browser stays invisible to it — which is the whole reason this
+ * is a tick per assistant rather than the blanket `tabs` permission that would show it every
+ * tab you have open.
+ */
+function renderAssistantList(settings: Settings, granted: Set<string>): void {
+  const list = el<HTMLElement>('ask-allowed-list');
+  const custom = customAssistant({
+    name: settings.askAiCustomName,
+    url: settings.askAiCustomUrl,
+  });
+  const known = custom ? [...ASSISTANTS, custom] : [...ASSISTANTS];
+
+  list.replaceChildren(
+    ...known.map((assistant) => {
+      const label = document.createElement('label');
+      label.dataset.granted = granted.has(assistant.id) ? 'yes' : 'no';
+
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = granted.has(assistant.id);
+      box.disabled = !settings.askAiEnabled;
+      box.addEventListener('change', () => {
+        void toggleAssistant(assistant, box.checked);
+      });
+
+      label.append(box, document.createTextNode(assistant.label));
+      // Says where access would go, so ticking is never a blind decision.
+      label.title = originsFor([assistant]).join(', ');
+      return label;
+    }),
+  );
+}
+
+/**
+ * Ticking asks Chrome; the setting only records what Chrome agreed to.
+ *
+ * Storing the tick first and requesting after would leave the list claiming access that was
+ * refused, which is exactly the kind of lie that makes a settings page untrustworthy.
+ */
+async function toggleAssistant(assistant: Assistant, wanted: boolean): Promise<void> {
+  const origins = originsFor([assistant]);
+  const settings = await getSettings();
+
+  if (!wanted) {
+    await chrome.permissions.remove({ origins }).catch(() => undefined);
+    await save({ askAiAllowed: settings.askAiAllowed.filter((id) => id !== assistant.id) });
+    return;
+  }
+
+  const ok = await chrome.permissions.request({ origins }).catch(() => false);
+  if (!ok) {
+    // Redraw so the box springs back: it is showing a grant that does not exist.
+    await rerender();
+    return;
+  }
+  await save({ askAiAllowed: [...new Set([...settings.askAiAllowed, assistant.id])] });
+}
+
+function renderAssistantChoices(settings: Settings): void {
+  const custom = customAssistant({
+    name: settings.askAiCustomName,
+    url: settings.askAiCustomUrl,
+  });
+
+  const options = [
+    ...ASSISTANTS.map((assistant) => ({ value: assistant.id, label: assistant.label })),
+    { value: 'custom', label: custom ? `${custom.label} (yours)` : 'Your own assistant…' },
+  ];
+
+  askControls.askAiAssistant.replaceChildren(
+    ...options.map(({ value, label }) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }),
+  );
+  askControls.askAiAssistant.value = settings.askAiAssistant;
+}
+
+async function renderAskAi(settings: Settings): Promise<void> {
+  const enabled = settings.askAiEnabled;
+  for (const control of [
+    askControls.askAiAnswerIn,
+    askControls.askAiPreferOpenTab,
+    askControls.askAiAssistant,
+    askControls.askAiCustomName,
+    askControls.askAiCustomUrl,
+    askControls.askAiConversation,
+    askControls.askAiBackground,
+    askControls.askAiPrompt,
+  ]) {
+    control.disabled = !enabled;
+  }
+
+  const granted = await grantedAssistants(settings);
+  renderAssistantChoices(settings);
+  renderAssistantList(settings, granted);
+
+  el<HTMLElement>('ask-custom-field').hidden =
+    settings.askAiAssistant !== 'custom' && !settings.askAiCustomUrl.trim();
+
+  el<HTMLElement>('ask-prefer-hint').textContent =
+    granted.size === 0
+      ? 'Tick an assistant above first — SubSelect cannot see a tab for one you have not.'
+      : `On, the question goes to whichever of ${[...granted].length === 1 ? 'it' : 'them'} you used most recently, and only falls back to the choice below when none is open.`;
+
+  const custom = customAssistant({ name: settings.askAiCustomName, url: settings.askAiCustomUrl });
+  const chosen = assistantById(settings.askAiAssistant, custom);
+
+  el<HTMLElement>('ask-assistant-hint').textContent = !chosen
+    ? 'Fill in your own assistant below, or pick one from the list.'
+    : chosen.promptUrl
+      ? `Opens a new ${chosen.label} chat with the question already in it. Needs no access.`
+      : granted.has(chosen.id)
+        ? `Opens ${chosen.label} and types the question in.`
+        : `${chosen.label} takes no question in a URL, so it must be ticked above before SubSelect can ask it anything.`;
+
+  // Reading a reply out of the assistant's page needs that site's permission, exactly as
+  // typing the question in does — so the panel option is only real once something is ticked.
+  el<HTMLElement>('ask-answer-hint').textContent =
+    settings.askAiAnswerIn === 'assistant'
+      ? 'You are taken to the assistant, where the full chat is.'
+      : granted.size > 0
+        ? 'The reply is read back and shown under the word, so you never leave the player. SubSelect reads only the reply, and only after you press the button.'
+        : 'Needs an assistant ticked above — reading the reply needs the same access as asking does. Until then the question opens the assistant instead.';
+
+  askControls.askAiBackground.disabled = !enabled || settings.askAiAnswerIn === 'panel';
+
+  const wantsFollowUps = settings.askAiConversation === 'follow-up';
+  el<HTMLElement>('ask-conversation-hint').textContent = !wantsFollowUps
+    ? 'Each question opens a clean chat. Only a tab SubSelect opened is ever reused for it.'
+    : granted.size > 0
+      ? 'Questions go into the chat you already have open, so the assistant keeps the context of everything you asked before it.'
+      : 'Needs an assistant ticked above. Without one, every question starts a new chat instead.';
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -248,6 +451,11 @@ async function renderProviders(settings: Settings): Promise<void> {
   await renderLookups(settings);
 }
 
+/** Redraws from storage — for the things that change without a setting changing. */
+async function rerender(): Promise<void> {
+  render(await getSettings());
+}
+
 let savedTimer: ReturnType<typeof setTimeout> | null = null;
 async function save(patch: Partial<Settings>): Promise<void> {
   const settings = await setSettings(patch);
@@ -294,6 +502,65 @@ for (const key of toggles) {
 
 providerControls.saveContext.addEventListener('change', () => {
   void save({ saveContext: providerControls.saveContext.checked });
+});
+
+for (const key of ['askAiEnabled', 'askAiBackground', 'askAiPreferOpenTab'] as const) {
+  askControls[key].addEventListener('change', () => {
+    void save({ [key]: askControls[key].checked } as Partial<Settings>);
+  });
+}
+
+askControls.askAiAnswerIn.addEventListener('change', () => {
+  void save({ askAiAnswerIn: askControls.askAiAnswerIn.value as Settings['askAiAnswerIn'] });
+});
+
+askControls.askAiConversation.addEventListener('change', () => {
+  void save({
+    askAiConversation: askControls.askAiConversation.value as Settings['askAiConversation'],
+  });
+});
+
+askControls.askAiAssistant.addEventListener('change', () => {
+  void save({ askAiAssistant: askControls.askAiAssistant.value });
+});
+
+askControls.askAiCustomName.addEventListener('change', () => {
+  void save({ askAiCustomName: askControls.askAiCustomName.value.trim() });
+});
+
+/*
+ * Changing the URL drops the grant that went with the old one.
+ *
+ * Access was given to a specific host. Silently carrying the tick over to a different one
+ * would leave the list showing access to a site the user never agreed to — so the tick is
+ * cleared and they are asked again, for the site they actually typed.
+ */
+askControls.askAiCustomUrl.addEventListener('change', () => {
+  void (async () => {
+    const settings = await getSettings();
+    const next = askControls.askAiCustomUrl.value.trim();
+    if (next === settings.askAiCustomUrl) return;
+
+    const previous = customAssistant({ name: settings.askAiCustomName, url: settings.askAiCustomUrl });
+    if (previous) {
+      await chrome.permissions.remove({ origins: originsFor([previous]) }).catch(() => undefined);
+    }
+    await save({
+      askAiCustomUrl: next,
+      askAiAllowed: settings.askAiAllowed.filter((id) => id !== 'custom'),
+    });
+  })();
+});
+
+// `change`, not `input`: the prompt is saved when the box is left, so a half-typed
+// sentence is never what a press would send.
+askControls.askAiPrompt.addEventListener('change', () => {
+  void save({ askAiPrompt: askControls.askAiPrompt.value });
+});
+
+el<HTMLButtonElement>('reset-ask-prompt').addEventListener('click', () => {
+  askControls.askAiPrompt.value = DEFAULT_ASK_AI_PROMPT;
+  void save({ askAiPrompt: DEFAULT_ASK_AI_PROMPT });
 });
 
 providerControls.translationLanguage.addEventListener('change', () => {

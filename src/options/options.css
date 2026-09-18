@@ -141,6 +141,14 @@ h2 {
   min-width: 0;
 }
 
+/* A control that needs the full width of the card rather than the right-hand column —
+   a prompt is a paragraph, and 240px of it at a time is unusable. */
+.field.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
 /* Scoped to the text column on purpose: `.field label` also matched `label.switch`, and
    being the more specific selector it turned the toggle into a block — the track lost its
    box and only the knob painted, floating outside the card. */
@@ -167,6 +175,7 @@ h2 {
 }
 
 input[type='url'],
+input[type='text'],
 input[type='password'] {
   background: var(--surface-2);
   color: var(--text);
@@ -176,6 +185,69 @@ input[type='password'] {
   font: inherit;
   min-width: 240px;
   flex: none;
+}
+
+/* The assistant checklist: a wrapping row of tick-boxes, so six of them do not become six
+   full-width rows in a card that already has plenty. */
+.assistant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assistant-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.assistant-list label:hover {
+  border-color: var(--accent);
+}
+
+.assistant-list input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* Granted and ticked are not the same thing — Chrome can refuse, or the user can revoke
+   access later — so the state shown is the one Chrome reports, not the one we asked for. */
+.assistant-list label[data-granted='no'] {
+  color: var(--muted);
+}
+
+.custom-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.custom-assistant input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+textarea {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 10px;
+  /* Monospace so the placeholder braces are unambiguous, and because a template is closer
+     to configuration than to prose. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
 }
 
 code {
