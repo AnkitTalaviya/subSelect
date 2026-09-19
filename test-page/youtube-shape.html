@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test — YouTube-shaped captions</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0f0f0f;
+        color: #f1f1f1;
+        font: 14px/1.6 Roboto, system-ui, "Segoe UI", sans-serif;
+        padding: 24px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #aaa; max-width: 74ch; }
+
+      /*
+       * Modelled on YouTube's player, because it differs from both other test pages in the
+       * ways that have actually broken detection in the wild:
+       *
+       *   1. The caption window is REMOVED when captions are switched off, not emptied.
+       *      An adapter that only watches for text changing sees nothing at all.
+       *   2. A fresh .caption-window is built per cue inside a persistent container, so the
+       *      element being watched is replaced constantly.
+       *   3. Auto-generated captions GROW a word at a time rather than being replaced, so
+       *      most "new cues" are really the same cue getting longer.
+       *   4. The player chrome sits between the video and the caption layer, so the caption
+       *      container is not a sibling of the video.
+       *   5. Navigation swaps the <video> element without a page load.
+       */
+      .html5-video-player {
+        position: relative;
+        width: min(1000px, 100%);
+        aspect-ratio: 16 / 9;
+        background: #000;
+      }
+      .html5-video-container { position: absolute; inset: 0; }
+      .video-stream { width: 100%; height: 100%; display: block; }
+
+      .ytp-caption-window-container {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 30;
+      }
+      .caption-window {
+        position: absolute;
+        left: 10%;
+        width: 80%;
+        bottom: 12%;
+        text-align: center;
+      }
+      .captions-text { display: inline-block; }
+      .caption-visual-line { display: block; }
+      .ytp-caption-segment {
+        background: rgba(8, 8, 8, 0.75);
+        color: #fff;
+        font-size: clamp(15px, 2.8vw, 30px);
+        line-height: 1.35;
+        padding: 0 4px;
+      }
+
+      .ytp-chrome-bottom {
+        position: absolute;
+        left: 12px; right: 12px; bottom: 0;
+        height: 48px;
+        z-index: 60;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+        pointer-events: none;
+      }
+
+      .controls { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        background: #272727; color: #f1f1f1; border: 1px solid #3f3f3f;
+        border-radius: 18px; padding: 8px 14px; font: inherit; cursor: pointer;
+      }
+      .diag { margin-top: 20px; }
+      .diag ul { padding-left: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>SubSelect test — YouTube-shaped captions</h1>
+    <p class="lede">
+      The awkward parts of YouTube, reproduced: the caption window is removed rather than
+      emptied when captions go off, a new window is built for every cue, auto-captions grow a
+      word at a time, and "watch next" swaps the video element without a page load.
+    </p>
+
+    <div class="html5-video-player" id="movie_player">
+      <div class="html5-video-container">
+        <video id="v" class="video-stream html5-main-video" muted playsinline></video>
+      </div>
+      <div class="ytp-caption-window-container" id="capcontainer"></div>
+      <div class="ytp-chrome-bottom"></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play">Play</button>
+      <button type="button" id="fullscreen">Fullscreen</button>
+      <button type="button" id="toggle">Turn captions off</button>
+      <button type="button" id="auto">Auto-captions: off</button>
+      <button type="button" id="navigate">Watch next (SPA)</button>
+    </div>
+
+    <section class="diag">
+      <h2>Diagnostics</h2>
+      <ul id="diag-list"></ul>
+    </section>
+
+    <script src="./shared.js"></script>
+    <script>
+      (function () {
+        var container = document.getElementById('capcontainer');
+        var video = document.getElementById('v');
+        var timer = null;
+        var autoMode = false;
+        var episode = 1;
+
+        SubSelectTest.startCanvasVideo(video, { hue: 0 });
+
+        /* A brand-new caption window per cue, exactly as YouTube builds one. */
+        function renderCaption(text) {
+          var win = document.createElement('div');
+          win.className = 'caption-window ytp-caption-window-bottom';
+          win.id = 'caption-window-1';
+
+          var holder = document.createElement('span');
+          holder.className = 'captions-text';
+
+          String(text).split('\n').forEach(function (line) {
+            var visual = document.createElement('span');
+            visual.className = 'caption-visual-line';
+            var seg = document.createElement('span');
+            seg.className = 'ytp-caption-segment';
+            seg.textContent = line;
+            visual.appendChild(seg);
+            holder.appendChild(visual);
+          });
+
+          win.appendChild(holder);
+          container.replaceChildren(win);
+        }
+
+        /*
+         * Auto-captions do not replace a line, they extend it. Rendering the growth is the
+         * point: a selection has to survive it, and treating each growth as a new caption is
+         * what used to drop the selection several times a second.
+         */
+        var growTimer = null;
+        function renderGrowing(text) {
+          if (growTimer) clearInterval(growTimer);
+          var words = String(text).replace(/\n/g, ' ').split(' ');
+          var shown = 0;
+          growTimer = setInterval(function () {
+            shown += 1;
+            if (shown > words.length) { clearInterval(growTimer); growTimer = null; return; }
+            renderCaption(words.slice(0, shown).join(' '));
+          }, 180);
+        }
+
+        function start() {
+          timer = SubSelectTest.cycleLines(function (text) {
+            if (autoMode) renderGrowing(text);
+            else renderCaption(text);
+          });
+        }
+        start();
+
+        document.getElementById('play').addEventListener('click', function () { video.play(); });
+        document.getElementById('fullscreen').addEventListener('click', function () {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else document.getElementById('movie_player').requestFullscreen();
+        });
+
+        var toggle = document.getElementById('toggle');
+        toggle.addEventListener('click', function () {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+            if (growTimer) { clearInterval(growTimer); growTimer = null; }
+            // YouTube removes the caption window outright; nothing is left to watch.
+            container.replaceChildren();
+            toggle.textContent = 'Turn captions on';
+          } else {
+            start();
+            toggle.textContent = 'Turn captions off';
+          }
+        });
+
+        var auto = document.getElementById('auto');
+        auto.addEventListener('click', function () {
+          autoMode = !autoMode;
+          auto.textContent = 'Auto-captions: ' + (autoMode ? 'on' : 'off');
+        });
+
+        /* "Watch next": a new video element and a new player body, with no page load. */
+        document.getElementById('navigate').addEventListener('click', function () {
+          episode += 1;
+          history.pushState({}, '', '/youtube-shape.html?v=episode' + episode);
+
+          if (timer) { clearInterval(timer); timer = null; }
+          if (growTimer) { clearInterval(growTimer); growTimer = null; }
+          container.replaceChildren();
+
+          var holder = document.querySelector('.html5-video-container');
+          var fresh = document.createElement('video');
+          fresh.id = 'v';
+          fresh.className = 'video-stream html5-main-video';
+          fresh.muted = true;
+          fresh.playsInline = true;
+          holder.replaceChildren(fresh);
+          video = fresh;
+          SubSelectTest.startCanvasVideo(video, { hue: (episode * 60) % 360 });
+          video.play();
+
+          setTimeout(start, 400);
+        });
+
+        SubSelectTest.startDiagnostics(document.getElementById('diag-list'), video, function () {
+          var c = container.querySelector('.captions-text');
+          return c ? c.textContent.trim() : '';
+        });
+      })();
+    </script>
+  </body>
+</html>

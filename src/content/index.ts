@@ -61,10 +61,25 @@ function main(): void {
     }
   });
 
-  onSettingsChanged(apply);
+  /*
+   * A change that lands while the first read is still in flight wins.
+   *
+   * Both paths call `apply`, and the initial read is asynchronous, so toggling SubSelect
+   * while a page was still loading could resolve the read *after* the change and re-apply
+   * the value the change had just replaced. The frame was then left in the state the user
+   * had just switched away from, and nothing would correct it until the page was reloaded.
+   */
+  let changed = false;
+
+  onSettingsChanged((settings) => {
+    changed = true;
+    apply(settings);
+  });
 
   void getSettings()
-    .then(apply)
+    .then((settings) => {
+      if (!changed) apply(settings);
+    })
     .catch((error: unknown) => log.error('could not read settings', error));
 
   window.addEventListener(

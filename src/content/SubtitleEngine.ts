@@ -311,12 +311,31 @@ export class SubtitleEngine {
     const binding = this.binding;
 
     const presentation = binding.presentation;
+
+    // An overlay the page removed is simply put back. Rebuilding the binding would also
+    // work, but it discards the words, the selection and any open menu to achieve the same
+    // thing — and a player that does this does it between every pair of subtitles.
+    const layerAlive = binding.renderer.ensureMounted();
+
     const detached =
       !binding.video.isConnected ||
       !binding.playerRoot.isConnected ||
-      // The site removed our overlay, so no click can reach a word any more.
-      binding.renderer.getLayer()?.isConnected !== true ||
-      (presentation.mode === 'mirror' && presentation.originalElement?.isConnected !== true);
+      // Nowhere left to put the overlay, so no click can reach a word any more.
+      !layerAlive ||
+      /*
+       * Liveness is the mount point, never the caption element itself.
+       *
+       * Plenty of players — YouTube among them — delete the caption element in the silence
+       * between two subtitles and build a new one for the next line. Reading that as a dead
+       * binding meant the whole engine was torn down and rebuilt in *every gap between
+       * subtitles*: the rebuild then raced the next cue and regularly lost, which is what
+       * made captions appear to be skipped, and it destroyed the context menu each time, so
+       * an answer could not be read for longer than one subtitle.
+       *
+       * The mount parent is the thing that has to survive, because that is where the overlay
+       * lives. An absent caption element just means nobody is speaking.
+       */
+      (presentation.mode === 'mirror' && !presentation.mountParent.isConnected);
 
     if (!detached) return;
 

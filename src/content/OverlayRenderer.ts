@@ -55,6 +55,30 @@ export class OverlayRenderer {
     return this.layer;
   }
 
+  /**
+   * Puts the layer back if the page removed it.
+   *
+   * Players rewrite the subtree their captions live in, and an overlay mounted anywhere
+   * inside it goes with it. Re-appending costs nothing and keeps the rendered words, the
+   * selection and any open menu exactly as they were, where rebuilding the binding throws
+   * all three away. Returns false only when there is nowhere left to put it, which is the
+   * one case that really does mean the binding is finished.
+   */
+  ensureMounted(): boolean {
+    const layer = this.layer;
+    if (!layer) return false;
+    if (layer.isConnected) return true;
+
+    // While something is fullscreen, only that subtree renders (§37), so the layer goes
+    // back there rather than to a mount point that is currently invisible.
+    const fullscreen = document.fullscreenElement;
+    const host = fullscreen instanceof HTMLElement ? fullscreen : this.presentation.mountParent;
+    if (!host.isConnected) return false;
+
+    host.appendChild(layer);
+    return true;
+  }
+
   /** True when the given node is part of our overlay. */
   contains(node: Node | null): boolean {
     return Boolean(node && this.layer?.contains(node));

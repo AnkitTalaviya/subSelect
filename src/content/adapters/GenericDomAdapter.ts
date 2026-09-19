@@ -145,7 +145,23 @@ export class GenericDomAdapter implements SubtitleAdapter {
 
   getPresentation(): AdapterPresentation | null {
     if (!this.container) return null;
-    const mountParent = this.parent ?? this.container.parentElement ?? this.context?.playerRoot;
+
+    /*
+     * The overlay is mounted in the player, not in the caption element's own parent.
+     *
+     * A caption container belongs to the player and gets rewritten wholesale: YouTube
+     * clears its entire caption-window container in the silence between two lines. Our
+     * overlay was a child of that container, so the player deleted it along with its own
+     * markup several times a minute. The engine saw a missing layer, concluded the binding
+     * was dead, rebuilt everything, and then raced the next cue — losing often enough to
+     * drop roughly every other subtitle.
+     *
+     * The player root is the element the engine already trusts to be stable: it is where
+     * the context menu is mounted and what the health check watches. Nothing about
+     * positioning depends on the choice, because the tracker measures the caption's real
+     * rect and offsets it against whatever the layer's offsetParent turns out to be.
+     */
+    const mountParent = this.context?.playerRoot ?? this.parent ?? this.container.parentElement;
     if (!mountParent) return null;
 
     /*
@@ -249,14 +265,25 @@ export class GenericDomAdapter implements SubtitleAdapter {
   }
 
   private bindObservers(): void {
+    /*
+     * The parent is watched even when there is no container to watch.
+     *
+     * A player that deletes its caption element between subtitles leaves nothing to observe,
+     * and binding observers only to a container we no longer have meant the *insertion of
+     * the next caption* was seen by nothing tighter than the 250ms whole-player sweep. At a
+     * normal speaking pace that sweep loses the race often enough to drop roughly every
+     * other subtitle. The element appearing under the parent is the precise event that says
+     * the captions are back, so that is what we listen for.
+     */
+    const parent = this.container?.parentElement ?? this.parent;
+    if (parent?.isConnected) this.parentObserver?.observe(parent, { childList: true });
+
     if (!this.container) return;
     this.textObserver?.observe(this.container, {
       childList: true,
       characterData: true,
       subtree: true,
     });
-    const parent = this.container.parentElement;
-    if (parent) this.parentObserver?.observe(parent, { childList: true });
   }
 
   /** Whether the container we hold is still the one the player is writing captions into. */
