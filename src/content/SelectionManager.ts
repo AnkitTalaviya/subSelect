@@ -83,26 +83,46 @@ export class SelectionManager {
   }
 
   attach(): void {
-    const layer = this.renderer.mount();
+    this.renderer.mount();
 
-    // Only word spans receive pointer events; the layer and the gaps between words are
-    // transparent, so seeking, volume and the control bar keep working (§43).
-    this.disposer.listen(layer, 'pointerdown', (event) => this.onPointerDown(event as PointerEvent), {
+    /*
+     * The gesture is taken at the window, in the capture phase — the earliest point there
+     * is — rather than on the overlay itself.
+     *
+     * Subscription players toggle playback when you click the picture, and they bind that
+     * handler wherever they like. A handler in the *capture* phase, or on the document, runs
+     * before anything bound to our layer can stop the event, so a click meant for a word
+     * reached the player as well. The effect was perverse: selecting a word paused the film
+     * (pauseOnSelect), and the player's toggle then saw a paused video and started it
+     * playing again. Netflix does exactly this.
+     *
+     * Every handler below is a no-op unless the event landed on one of our word spans, so
+     * seeking, volume and the control bar keep working untouched (§43). The one case this
+     * cannot win is a page listener registered on `window` in capture before our content
+     * script ran; nothing in the platform can beat that.
+     */
+    this.disposer.listen(window, 'pointerdown', (event) => this.onPointerDown(event as PointerEvent), {
       capture: true,
     });
-    this.disposer.listen(layer, 'pointermove', (event) => this.onPointerMove(event as PointerEvent), {
+    this.disposer.listen(window, 'pointermove', (event) => this.onPointerMove(event as PointerEvent), {
       capture: true,
     });
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
-      this.disposer.listen(layer, type, (event) => this.onPointerUp(event as PointerEvent), {
+      this.disposer.listen(window, type, (event) => this.onPointerUp(event as PointerEvent), {
         capture: true,
       });
     }
 
-    // Players bind play/pause to several of these, so each is stopped for word hits.
-    for (const type of ['mousedown', 'mouseup', 'click', 'dblclick'] as const) {
+    /*
+     * Registered after the handlers above, so our own logic has already run by the time the
+     * event is stopped: `stopPropagation` holds the event back from other *targets*, not
+     * from other listeners on this one.
+     *
+     * Players bind play/pause to any of these, so a word hit stops all of them.
+     */
+    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
       this.disposer.listen(
-        layer,
+        window,
         type,
         (event) => {
           if (this.renderer.wordIdAt(event.target)) {

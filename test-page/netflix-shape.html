@@ -132,7 +132,23 @@
 
         var timer = SubSelectTest.cycleLines(renderCaption);
 
-        document.getElementById('play').addEventListener('click', function () { video.play(); });
+        /*
+         * Clicking the picture toggles playback, the way every subscription player does.
+         *
+         * This is the thing that makes a caption overlay hard: a click meant for a word is
+         * also a click on the video, so an overlay that lets the event through pauses or
+         * resumes the film every time somebody selects a word. Registered on the container
+         * in the bubble phase, which is where players normally put it.
+         */
+        document.querySelector('.watch-video').addEventListener('click', function () {
+          if (video.paused) video.play();
+          else video.pause();
+        });
+
+        document.getElementById('play').addEventListener('click', function (e) {
+          e.stopPropagation();
+          video.play();
+        });
         document.getElementById('fullscreen').addEventListener('click', function () {
           if (document.fullscreenElement) document.exitFullscreen();
           else document.querySelector('.watch-video').requestFullscreen();
