@@ -49,14 +49,38 @@
         text-shadow: rgb(0, 0, 0) 0 0 7px;
       }
 
-      /* Netflix's own controls sit above the caption layer. */
+      /*
+       * Netflix's own controls sit above the caption layer, and they are not decoration:
+       * the scrubber carries a live-region timecode that updates every second, and the bar
+       * appears and disappears as the pointer moves. That makes it a moving target that
+       * looks, to anything scanning for captions, a lot like a caption: text, over the
+       * lower part of the video, announced to assistive technology.
+       */
       .player-controls {
         position: absolute;
         left: 0; right: 0; bottom: 0;
         height: 15%;
         z-index: 2;
         background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-        pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 16px;
+        color: #fff;
+      }
+      .player-controls[hidden] { display: none; }
+      .scrubber {
+        flex: 1;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        position: relative;
+      }
+      .scrubber-fill { position: absolute; inset: 0 auto 0 0; background: #e50914; border-radius: 2px; }
+      .time-remaining { font-variant-numeric: tabular-nums; font-size: 14px; min-width: 56px; }
+      .control-button {
+        background: none; border: 0; color: #fff; font-size: 16px;
+        cursor: pointer; padding: 4px 8px;
       }
 
       .controls { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -82,7 +106,14 @@
       <div class="player-timedtext">
         <div class="player-timedtext-text-container" id="cap"></div>
       </div>
-      <div class="player-controls"></div>
+      <div class="player-controls" id="controls" hidden>
+        <button type="button" class="control-button" aria-label="Play">▶</button>
+        <div class="scrubber" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="scrubber-fill" id="fill" style="width: 0%"></div>
+        </div>
+        <span class="time-remaining" id="remaining" aria-live="polite" aria-atomic="true">-1:23</span>
+        <button type="button" class="control-button" aria-label="Volume">🔊</button>
+      </div>
     </div>
 
     <div class="controls">
@@ -131,6 +162,41 @@
         }
 
         var timer = SubSelectTest.cycleLines(renderCaption);
+
+        /*
+         * The control bar comes and goes with the pointer, and its timecode keeps ticking
+         * while it is up. Exposed as window.__controls so a test can drive it, because
+         * "the menu vanished when the scrubber appeared" is otherwise very hard to catch.
+         */
+        var controls = document.getElementById('controls');
+        var fill = document.getElementById('fill');
+        var remaining = document.getElementById('remaining');
+        var tick = null;
+        var hideTimer = null;
+
+        window.__controls = function (show) {
+          controls.hidden = !show;
+          if (show && !tick) {
+            var seconds = 83;
+            tick = setInterval(function () {
+              seconds = seconds > 0 ? seconds - 1 : 83;
+              var m = Math.floor(seconds / 60);
+              var s = seconds % 60;
+              remaining.textContent = '-' + m + ':' + (s < 10 ? '0' : '') + s;
+              fill.style.width = (100 - (seconds / 83) * 100).toFixed(1) + '%';
+            }, 1000);
+          } else if (!show && tick) {
+            clearInterval(tick);
+            tick = null;
+          }
+        };
+
+        // As on a real player: move the pointer and the bar appears, then fades out again.
+        document.querySelector('.watch-video').addEventListener('mousemove', function () {
+          window.__controls(true);
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(function () { window.__controls(false); }, 3000);
+        });
 
         /*
          * Clicking the picture toggles playback, the way every subscription player does.

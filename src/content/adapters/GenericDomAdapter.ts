@@ -47,6 +47,23 @@ const CANDIDATE_SELECTORS = [
 const NAME_HINTS = /caption|subtitle|untertitel|timedtext|timed-text|\bcue\b|\bcc\b|text-track/i;
 const LABEL_HINTS = /caption|subtitle|untertitel|sous-titre|subtítulo/i;
 
+/**
+ * Player chrome, which must never be mistaken for a caption (§43).
+ *
+ * A control bar is a remarkably good impostor: it holds text, it sits over the lower part
+ * of the video, and its timecode is usually an `aria-live` region so screen readers
+ * announce it — which is the single strongest signal caption detection has. On Netflix the
+ * scrubber's remaining-time readout scored well enough, in the silence between two
+ * subtitles, to be adopted as the caption element. The adapter then decided the captions
+ * had "moved", asked for a rebind, and the rebind closed whatever the viewer was reading.
+ * The bar appears and disappears with the pointer, so it happened over and over.
+ */
+const CHROME_HINTS =
+  /control|scrubber|seek|timeline|progress|toolbar|slider|\bbutton\b|volume|\bmenu\b|tooltip|\bnav\b|title-?bar/i;
+const CHROME_ROLES = new Set(['toolbar', 'menubar', 'menu', 'slider', 'button', 'navigation', 'tablist']);
+/** Things a viewer can operate. Caption text contains none of them. */
+const INTERACTIVE = 'button, input, select, textarea, a[href], progress, [role="slider"], [role="button"]';
+
 /** A caption container should hold a line or two, not a page of text. */
 const MAX_CUE_LENGTH = 700;
 
@@ -100,6 +117,33 @@ export function extractCaptionText(root: HTMLElement): string {
 
   for (const child of root.childNodes) walk(child);
   return out.join('');
+}
+
+/**
+ * Whether an element belongs to the player's own furniture rather than to its captions.
+ *
+ * Walked from the element outwards to the player root, because the giveaway is usually an
+ * ancestor: Netflix's remaining-time readout is an anonymous `<span aria-live>` whose only
+ * distinguishing feature is that it lives inside the control bar.
+ *
+ * An element that names itself a caption is taken at its word and the walk stops there, so
+ * a player that happens to nest its caption layer inside something called "controls" is
+ * still detected. Between the two, naming wins — it is the more specific claim.
+ */
+export function isPlayerChrome(element: HTMLElement, playerRoot: HTMLElement): boolean {
+  // Nothing you can click, drag or type into is ever part of a subtitle.
+  if (element.querySelector(INTERACTIVE)) return true;
+
+  const stop = playerRoot.parentElement;
+  for (let node: HTMLElement | null = element; node && node !== stop; node = node.parentElement) {
+    if (NAME_HINTS.test(attributeBlob(node))) return false;
+
+    const role = node.getAttribute('role');
+    if (role && CHROME_ROLES.has(role)) return true;
+    if (CHROME_HINTS.test(attributeBlob(node))) return true;
+  }
+
+  return false;
 }
 
 export class GenericDomAdapter implements SubtitleAdapter {
@@ -420,6 +464,8 @@ export class GenericDomAdapter implements SubtitleAdapter {
       for (const element of root.querySelectorAll<HTMLElement>(CANDIDATE_SELECTORS)) {
         if (seen.has(element)) continue;
         seen.add(element);
+
+        if (isPlayerChrome(element, context.playerRoot)) continue;
 
         const score = this.scoreCandidate(element, videoRect);
         if (score > 0) candidates.push({ element, score });
