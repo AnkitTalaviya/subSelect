@@ -99,6 +99,27 @@ POST  { "text": "…", "source": "de", "target": "en", "context": "…" }
 →     { "translation": "…" }
 ```
 
+### Languages
+
+Two settings, both in the popup and on the settings page: the language of the subtitles,
+and the language to translate them into.
+
+The subtitle language defaults to **Detect automatically**, which reads it from the text
+track's own declaration, from a `lang` attribute inside the player, or — when a site
+declares neither — from the subtitles themselves. Detection uses the writing system and a
+small set of very common function words, and says nothing rather than guessing when a line
+is too short to tell. It follows a viewer who switches subtitle track mid-film, but takes
+two agreeing lines to change its mind, so one stray caption cannot flip the language
+mid-scene.
+
+The two can never name the same language: choosing one that is already taken by the other
+swaps them, because translating German into German is nobody's intention.
+
+Word segmentation is locale-sensitive, which is why the language matters beyond labelling.
+Japanese, Chinese and Korean are written without spaces, and all thirteen supported
+languages are checked end to end — segmentation, detection and selection — by
+`test-page/languages.html`.
+
 ### Interactions
 
 | Gesture | Result |

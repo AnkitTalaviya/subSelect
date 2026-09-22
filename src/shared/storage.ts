@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from './constants';
 import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from './settings';
+import { resolveLanguagePair } from './language';
 import { log } from './logger';
 
 /**
@@ -21,7 +22,25 @@ export async function getSettings(): Promise<Settings> {
 
 export async function setSettings(patch: Partial<Settings>): Promise<Settings> {
   const current = await getSettings();
-  const next = normalizeSettings({ ...current, ...patch });
+  const merged: Partial<Settings> = { ...current, ...patch };
+
+  /*
+   * Choosing a language that is already taken by the other setting swaps the two, rather
+   * than being refused or quietly producing a German-to-German translation. It happens here
+   * so every way of changing a language behaves the same — the popup, the settings page,
+   * and anything added later — and so the rule is stated once.
+   *
+   * The patch is passed rather than the merged object because which field the user actually
+   * touched is the whole question: the one they set wins, the other gives way.
+   */
+  if (patch.subtitleLanguage !== undefined || patch.translationLanguage !== undefined) {
+    Object.assign(merged, resolveLanguagePair(current, {
+      ...(patch.subtitleLanguage !== undefined ? { subtitleLanguage: patch.subtitleLanguage } : {}),
+      ...(patch.translationLanguage !== undefined ? { translationLanguage: patch.translationLanguage } : {}),
+    }));
+  }
+
+  const next = normalizeSettings(merged);
   await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
   return next;
 }

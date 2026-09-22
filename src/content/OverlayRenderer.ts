@@ -43,7 +43,17 @@ export class OverlayRenderer {
     layer.setAttribute('role', 'region');
     layer.setAttribute('aria-label', `${EXTENSION_NAME} interactive subtitle`);
     layer.setAttribute(ATTR.layerHidden, 'true');
-    if (this.presentation.mode === 'derived') layer.setAttribute('data-ss-anchor', 'bottom');
+    /*
+     * Captions grow upward from their bottom edge, in both modes.
+     *
+     * Mirror mode is given the original's exact box, so anything that renders one line
+     * taller than the player did — a font that falls back, a caption whose padding makes it
+     * wrap a word earlier — used to spill downward, off the bottom of the picture, and the
+     * last line was cut in half. Anchoring at the bottom keeps the overlay sitting on the
+     * caption it covers and sends any overflow up into the frame, where it can still be
+     * read. It is also simply how a caption behaves.
+     */
+    layer.setAttribute('data-ss-anchor', 'bottom');
 
     this.presentation.mountParent.appendChild(layer);
     this.layer = layer;

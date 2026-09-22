@@ -2,6 +2,7 @@ import type { SubtitleCue } from '@shared/types';
 import { ATTR, CLASS } from '@shared/constants';
 import { log } from '@shared/logger';
 import { buildCue } from '../SubtitleParser';
+import { LanguageGuess } from '@shared/language';
 import { Disposer, collectShadowRoots, throttleTrailing } from '../dom';
 import type { AdapterContext, AdapterPresentation, SubtitleAdapter } from './types';
 
@@ -164,6 +165,8 @@ export class GenericDomAdapter implements SubtitleAdapter {
   private parentObserver: MutationObserver | null = null;
   private rootObserver: MutationObserver | null = null;
   private lastCueId: string | null = null;
+  /** Evidence for the caption language, used only when nothing declares one. */
+  private readonly guess = new LanguageGuess();
   /** Memo so `canHandle` followed by `attach` costs one scan, not two. */
   private resolved: { context: AdapterContext; container: HTMLElement | null } | null = null;
 
@@ -185,6 +188,7 @@ export class GenericDomAdapter implements SubtitleAdapter {
     this.parent = null;
     this.context = null;
     this.lastCueId = null;
+    this.guess.reset();
   }
 
   getPresentation(): AdapterPresentation | null {
@@ -232,6 +236,9 @@ export class GenericDomAdapter implements SubtitleAdapter {
 
     const raw = extractCaptionText(this.container);
     if (raw.length > MAX_CUE_LENGTH) return null;
+
+    // Only while the language is genuinely unknown; a declared one is never second-guessed.
+    if (!this.context?.language) this.guess.observe(raw);
 
     const input: Parameters<typeof buildCue>[0] = { raw, source: 'dom' };
     const language = this.detectLanguage();
@@ -435,7 +442,14 @@ export class GenericDomAdapter implements SubtitleAdapter {
       if (declared) return declared;
     }
 
-    return this.context?.language;
+    /*
+     * Nothing declared and no preference set, so the captions themselves are the only
+     * evidence left. The guess accumulates over several cues and then holds, because a
+     * language that changed every line would re-tokenise the caption under the reader.
+     */
+    if (!this.context?.language) return this.guess.get() ?? undefined;
+
+    return this.context.language;
   }
 
   /** Scores every candidate in and around the player and returns the best, or null. */

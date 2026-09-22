@@ -1,4 +1,5 @@
 import { SUPPORTED_LANGUAGES, type LanguageCode } from '@shared/constants';
+import { AUTO_LANGUAGE, type SubtitleLanguage } from '@shared/language';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { getSettings, setSettings } from '@shared/storage';
 import { DEFAULT_ASK_AI_PROMPT } from '@shared/askAi';
@@ -458,27 +459,49 @@ async function rerender(): Promise<void> {
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null;
 async function save(patch: Partial<Settings>): Promise<void> {
+  /*
+   * A language patch can move the *other* language, because the two are never allowed to
+   * name the same one. Rendering already shows the new pair; reading the old one first is
+   * what lets the change be announced rather than appearing to happen on its own.
+   *
+   * Only read it for a language patch: every other control saves far more often — the
+   * colour picker fires on each drag — and none of them can move a second setting.
+   */
+  const isLanguage = patch.subtitleLanguage !== undefined || patch.translationLanguage !== undefined;
+  const before = isLanguage ? await getSettings() : null;
+
   const settings = await setSettings(patch);
   render(settings);
 
-  savedState.textContent = 'Saved';
+  const swapped = before !== null && (
+    (patch.subtitleLanguage !== undefined && settings.translationLanguage !== before.translationLanguage) ||
+    (patch.translationLanguage !== undefined && settings.subtitleLanguage !== before.subtitleLanguage)
+  );
+
+  savedState.textContent = swapped ? 'Saved — languages swapped' : 'Saved';
   if (savedTimer !== null) clearTimeout(savedTimer);
   savedTimer = setTimeout(() => {
     savedState.textContent = '';
-  }, 1600);
+  }, swapped ? 3200 : 1600);
 }
 
 function populateLanguages(): void {
-  for (const select of [controls.subtitleLanguage, providerControls.translationLanguage]) {
-    select.replaceChildren(
-      ...SUPPORTED_LANGUAGES.map(({ code, label }) => {
-        const option = document.createElement('option');
-        option.value = code;
-        option.textContent = label;
-        return option;
-      }),
-    );
-  }
+  const options = (): HTMLOptionElement[] =>
+    SUPPORTED_LANGUAGES.map(({ code, label }) => {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = label;
+      return option;
+    });
+
+  // Only the subtitle side can be detected; there is nothing to detect about the language
+  // somebody wants to read.
+  const auto = document.createElement('option');
+  auto.value = AUTO_LANGUAGE;
+  auto.textContent = 'Detect automatically';
+
+  controls.subtitleLanguage.replaceChildren(auto, ...options());
+  providerControls.translationLanguage.replaceChildren(...options());
 }
 
 // ── Wiring ────────────────────────────────────────────────────────────────────
@@ -620,7 +643,7 @@ async function refreshVocabularyCount(): Promise<void> {
 }
 
 controls.subtitleLanguage.addEventListener('change', () => {
-  void save({ subtitleLanguage: controls.subtitleLanguage.value as LanguageCode });
+  void save({ subtitleLanguage: controls.subtitleLanguage.value as SubtitleLanguage });
 });
 
 controls.contextMenuPlacement.addEventListener('change', () => {

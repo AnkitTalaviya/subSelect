@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubSelect test — languages</title>
+    <style>
+      body {
+        margin: 0;
+        background: #10131a;
+        color: #e8eaf2;
+        font: 14px/1.6 system-ui, "Segoe UI", Roboto, sans-serif;
+        padding: 24px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #9aa1b5; max-width: 74ch; }
+
+      .player { position: relative; width: min(1000px, 100%); aspect-ratio: 16 / 9; background: #000; }
+      .player video { width: 100%; height: 100%; display: block; }
+
+      .captions {
+        position: absolute;
+        left: 8%;
+        width: 84%;
+        bottom: 10%;
+        text-align: center;
+        pointer-events: none;
+      }
+      .captions-text {
+        display: inline;
+        background: rgba(0, 0, 0, 0.55);
+        color: #fff;
+        font-size: clamp(16px, 2.8vw, 30px);
+        line-height: 1.35;
+        padding: 0.15em 0.5em;
+      }
+
+      .controls { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      button, select {
+        background: #232838; color: #e8eaf2; border: 1px solid #39405a;
+        border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
+      }
+      .diag { margin-top: 20px; }
+      .diag ul { padding-left: 18px; }
+      code { background: #1b2030; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>SubSelect test — languages</h1>
+    <p class="lede">
+      The same player, captioned in one language at a time. Word segmentation is
+      locale-sensitive and the scripts differ enormously — Japanese and Chinese have no
+      spaces between words at all — so "it works" has to mean "it works in each of these",
+      not just in German. Nothing here declares a language anywhere, which is deliberate:
+      it forces detection to work from the subtitles themselves.
+    </p>
+
+    <div class="player" id="player">
+      <video id="v" muted playsinline></video>
+      <div class="captions"><span class="captions-text" id="cap"></span></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play">Play</button>
+      <label for="lang">Language</label>
+      <select id="lang"></select>
+      <button type="button" id="next">Next line</button>
+    </div>
+
+    <section class="diag">
+      <h2>Diagnostics</h2>
+      <ul id="diag-list"></ul>
+    </section>
+
+    <script src="./shared.js"></script>
+    <script>
+      (function () {
+        /*
+         * Two lines per language, each an ordinary sentence rather than a pangram, because
+         * what matters is that everyday words segment and look up correctly.
+         */
+        var SAMPLES = {
+          de: ['Ich möchte morgen nach Berlin fahren.', 'Obwohl ich müde bin, lerne ich Deutsch.'],
+          en: ['I know what you did and that is the problem.', 'We should not wait for them.'],
+          es: ['No sé qué está pasando, pero es muy extraño.', 'Todo el mundo quiere una respuesta.'],
+          fr: ['Je ne sais pas qui vous êtes, mais restez là.', 'Nous avons besoin de plus de temps.'],
+          it: ['Non so che cosa sia questo, ma è più strano.', 'Dobbiamo parlare con lui domani.'],
+          pt: ['Você não sabe o que isso significa para mim.', 'Precisamos de mais uma hora.'],
+          nl: ['Ik weet niet wat dat is, maar het is niet goed.', 'We moeten hier morgen over praten.'],
+          pl: ['Nie wiem, co to jest, ale to się nie liczy.', 'Musimy o tym jutro porozmawiać.'],
+          tr: ['Bu çok daha iyi bir şey değil ama ne var?', 'Yarın bunun hakkında konuşmalıyız.'],
+          ru: ['Я не знаю, что это такое, но это странно.', 'Нам нужно больше времени.'],
+          ja: ['これはちょっと難しいですね。', '明日もう一度話しましょう。'],
+          ko: ['여기서 뭐 하고 있어요?', '내일 다시 이야기합시다.'],
+          zh: ['这件事情真的很复杂。', '我们明天再谈一次。'],
+        };
+
+        var video = document.getElementById('v');
+        var cap = document.getElementById('cap');
+        var select = document.getElementById('lang');
+        var code = 'de';
+        var index = 0;
+
+        SubSelectTest.startCanvasVideo(video, { hue: 210 });
+
+        Object.keys(SAMPLES).forEach(function (key) {
+          var option = document.createElement('option');
+          option.value = key;
+          option.textContent = key;
+          select.appendChild(option);
+        });
+
+        function render() {
+          cap.textContent = SAMPLES[code][index % SAMPLES[code].length];
+        }
+        render();
+
+        // Exposed so a test can drive the language and the line directly.
+        window.__setLanguage = function (next) {
+          code = next;
+          index = 0;
+          render();
+        };
+        window.__nextLine = function () {
+          index += 1;
+          render();
+        };
+
+        select.addEventListener('change', function () { window.__setLanguage(select.value); });
+        document.getElementById('next').addEventListener('click', function () { window.__nextLine(); });
+        document.getElementById('play').addEventListener('click', function () { video.play(); });
+
+        SubSelectTest.startDiagnostics(document.getElementById('diag-list'), video, function () {
+          return cap.textContent.trim();
+        });
+      })();
+    </script>
+  </body>
+</html>

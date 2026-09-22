@@ -87,6 +87,17 @@ body {
   color: var(--text);
 }
 
+/* Explains a change the user did not make themselves — the two languages being swapped. */
+.row-note {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.row-note[hidden] {
+  display: none;
+}
+
 select {
   background: var(--surface);
   color: var(--text);

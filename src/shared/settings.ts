@@ -1,6 +1,7 @@
-import type { LanguageCode } from './constants';
+import { SUPPORTED_LANGUAGES, type LanguageCode } from './constants';
 import { DEFAULT_ASK_AI_PROMPT } from './askAi';
 import { BUILT_IN_IDS } from './assistants';
+import { AUTO_LANGUAGE, resolveLanguagePair, type SubtitleLanguage } from './language';
 
 /**
  * User settings.
@@ -23,9 +24,12 @@ export interface Settings {
   /**
    * Language used for word segmentation and as the cue language when the site does not
    * declare one. Segmentation is locale-sensitive, so this is not cosmetic.
+   *
+   * `auto` means "read it off the captions": the track's declared language, a `lang`
+   * attribute inside the player, or failing both, the text itself (§25).
    */
-  subtitleLanguage: LanguageCode;
-  /** Language to translate into (§24). */
+  subtitleLanguage: SubtitleLanguage;
+  /** Language to translate into (§24). Never the same as the subtitle language. */
   translationLanguage: LanguageCode;
 
   /**
@@ -168,7 +172,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
   enabled: true,
-  subtitleLanguage: 'de',
+  subtitleLanguage: AUTO_LANGUAGE,
   translationLanguage: 'en',
   translationProvider: 'auto',
   translationEndpoint: '',
@@ -202,8 +206,14 @@ export const DEFAULT_SETTINGS: Settings = {
   debug: false,
 };
 
+const LANGUAGE_CODES = SUPPORTED_LANGUAGES.map((language) => language.code);
+
 /** Values a string setting is allowed to take. Anything else falls back to the default. */
 const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
+  // Both were previously unchecked, so any string at all survived normalisation and was
+  // handed to a segmenter or a translation provider as if it were a language.
+  subtitleLanguage: [AUTO_LANGUAGE, ...LANGUAGE_CODES],
+  translationLanguage: LANGUAGE_CODES,
   contextMenuPlacement: ['auto', 'above', 'below'],
   theme: ['system', 'light', 'dark'],
   translationProvider: ['auto', 'none', 'chrome-ondevice', 'libretranslate', 'lingva', 'deepl', 'custom'],
@@ -251,6 +261,16 @@ export function normalizeSettings(stored: unknown): Settings {
    */
   const known = new Set<string>([...BUILT_IN_IDS, 'custom']);
   result.askAiAllowed = [...new Set(result.askAiAllowed.filter((id) => known.has(id)))];
+
+  /*
+   * A stored pair naming the same language twice is repaired here rather than only in the
+   * controls that set it, so settings written by an older build — or by hand — cannot ask
+   * for German to be translated into German.
+   */
+  Object.assign(result, resolveLanguagePair(result, {
+    subtitleLanguage: result.subtitleLanguage,
+    translationLanguage: result.translationLanguage,
+  }));
 
   result.version = DEFAULT_SETTINGS.version;
   return result;

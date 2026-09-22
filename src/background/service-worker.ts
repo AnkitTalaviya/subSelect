@@ -3,6 +3,7 @@ import { ASK_AI_PORT, type AskAiPortMessage } from '@shared/messages';
 import type { SubtitleSelection } from '@shared/types';
 import { log } from '@shared/logger';
 import { getSettings, setSettings } from '@shared/storage';
+import { effectiveLanguage } from '@shared/language';
 import type { Settings } from '@shared/settings';
 import { COMMANDS, SESSION_KEYS } from '@shared/constants';
 import type { DictionaryProvider, TranslationProvider, WordDetails } from '../providers/types';
@@ -216,7 +217,7 @@ async function translate(message: Extract<ExtensionMessage, { type: 'TRANSLATE_S
     (provider: TranslationProvider) =>
       provider.translate(
         message.text,
-        message.sourceLanguage || settings.subtitleLanguage,
+        effectiveLanguage(message.sourceLanguage, settings.subtitleLanguage, message.context ?? message.text),
         settings.translationLanguage,
         message.context,
       ),
@@ -230,7 +231,7 @@ async function lookup(message: Extract<ExtensionMessage, { type: 'LOOKUP_WORD' }
   return runChain(
     createDictionaryChain(settings),
     (provider: DictionaryProvider) =>
-      provider.lookup(message.text, message.language || settings.subtitleLanguage),
+      provider.lookup(message.text, effectiveLanguage(message.language, settings.subtitleLanguage, message.text)),
     { gate: gateFor(settings), emptyMessage: 'Dictionary lookup is turned off in settings.' },
   );
 }
@@ -246,7 +247,7 @@ async function lookup(message: Extract<ExtensionMessage, { type: 'LOOKUP_WORD' }
  */
 async function wordDetails(message: Extract<ExtensionMessage, { type: 'GET_WORD_DETAILS' }>) {
   const settings = await getSettings();
-  const language = message.language || settings.subtitleLanguage;
+  const language = effectiveLanguage(message.language, settings.subtitleLanguage, message.context ?? message.text);
   const gated = gateFor(settings);
 
   const [translated, defined, grammared] = await Promise.all([
@@ -338,7 +339,8 @@ async function pronounce(message: Extract<ExtensionMessage, { type: 'FIND_PRONUN
     return { ok: false as const, kind: 'not-configured' as const, message: 'Recordings are turned off.' };
   }
 
-  const language = message.language || settings.subtitleLanguage;
+  // A pronunciation request carries only the word, so there is no sentence to detect from.
+  const language = effectiveLanguage(message.language, settings.subtitleLanguage, message.text);
   const host = wiktionaryHostFor(language);
 
   return runChain(
@@ -387,7 +389,8 @@ async function askAi(message: Extract<ExtensionMessage, { type: 'ASK_AI' }>) {
     // invites an answer about the punctuation.
     word: message.lookupText || message.text,
     sentence: message.context ?? message.text,
-    language: message.language || settings.subtitleLanguage,
+    language: effectiveLanguage(message.language, settings.subtitleLanguage, message.context ?? message.text)
+      ?? 'this language',
     target: settings.translationLanguage,
   });
 

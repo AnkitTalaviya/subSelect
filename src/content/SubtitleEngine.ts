@@ -1,5 +1,6 @@
 import type { FrameState, FrameStatus, SubtitleCue, SubtitleSelection } from '@shared/types';
 import { MAX_CONSECUTIVE_ERRORS, TIMING } from '@shared/constants';
+import { AUTO_LANGUAGE } from '@shared/language';
 import { log } from '@shared/logger';
 import type { Settings } from '@shared/settings';
 import { ActiveVideoDetector } from './ActiveVideoDetector';
@@ -420,7 +421,17 @@ export class SubtitleEngine {
       video,
       playerRoot: findPlayerRoot(video),
       invalidate: () => this.requestRebind(video),
-      ...(this.settings.subtitleLanguage ? { language: this.settings.subtitleLanguage } : {}),
+      /*
+       * `auto` is passed as "no preference", not as a language.
+       *
+       * The setting is the adapter's last fallback, so naming one here outranks nothing but
+       * silences detection: the adapter would stop looking the moment it had an answer.
+       * Leaving it out lets the track's own declaration, a `lang` inside the player, and
+       * finally the text itself decide (§25).
+       */
+      ...(this.settings.subtitleLanguage !== AUTO_LANGUAGE
+        ? { language: this.settings.subtitleLanguage }
+        : {}),
     };
 
     const adapter = selectAdapter(context);

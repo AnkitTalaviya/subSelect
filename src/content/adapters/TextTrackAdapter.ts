@@ -1,5 +1,6 @@
 import type { SubtitleCue } from '@shared/types';
 import { log } from '@shared/logger';
+import { LanguageGuess } from '@shared/language';
 import { buildCue } from '../SubtitleParser';
 import { Disposer } from '../dom';
 import type { AdapterContext, AdapterPresentation, SubtitleAdapter } from './types';
@@ -35,6 +36,8 @@ export class TextTrackAdapter implements SubtitleAdapter {
   private originalMode: TextTrackMode | null = null;
   private readonly disposer = new Disposer();
   private lastCueId: string | null = null;
+  /** Evidence for the caption language, used only when the track declares none. */
+  private readonly guess = new LanguageGuess();
   private currentAlign: string | undefined;
 
   canHandle(context: AdapterContext): boolean {
@@ -51,6 +54,7 @@ export class TextTrackAdapter implements SubtitleAdapter {
     this.disposer.dispose();
     this.context = null;
     this.lastCueId = null;
+    this.guess.reset();
   }
 
   getPresentation(): AdapterPresentation | null {
@@ -85,13 +89,23 @@ export class TextTrackAdapter implements SubtitleAdapter {
 
     this.currentAlign = align === 'left' || align === 'right' ? align : 'center';
 
+    const raw = parts.join('\n');
     const input: Parameters<typeof buildCue>[0] = {
-      raw: parts.join('\n'),
+      raw,
       source: 'texttrack',
       startTime: Number.isFinite(startTime) ? startTime : undefined,
       endTime: endTime > 0 ? endTime : undefined,
     };
-    const language = this.track?.language || this.context?.language;
+
+    /*
+     * A text track usually declares its language, which is the best answer there is. When
+     * it does not — and the user has not named one either — the cue text is the only
+     * evidence, so it is accumulated until it settles (§25).
+     */
+    const declared = this.track?.language || this.context?.language;
+    if (!declared) this.guess.observe(raw);
+
+    const language = declared || this.guess.get();
     if (language) input.language = language;
 
     return buildCue(input);

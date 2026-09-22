@@ -1,6 +1,13 @@
 import type { FrameStatus } from '@shared/types';
-import { SESSION_KEYS, SUPPORTED_LANGUAGES, UNSUPPORTED_MESSAGE } from '@shared/constants';
-import type { LanguageCode } from '@shared/constants';
+import {
+  SESSION_KEYS,
+  SUPPORTED_LANGUAGES,
+  UNSUPPORTED_MESSAGE,
+  languageLabel,
+  type LanguageCode,
+} from '@shared/constants';
+import { AUTO_LANGUAGE, type SubtitleLanguage } from '@shared/language';
+import type { Settings } from '@shared/settings';
 import { sendToTab } from '@shared/messages';
 import { getSettings, setSettings } from '@shared/storage';
 import { getVocabularyCount } from '../vocabulary/VocabularyManager';
@@ -15,11 +22,16 @@ import { getVocabularyCount } from '../vocabulary/VocabularyManager';
 
 const enabledInput = must<HTMLInputElement>('#enabled');
 const languageSelect = must<HTMLSelectElement>('#language');
+const translationSelect = must<HTMLSelectElement>('#translation-language');
+const languageNote = must<HTMLElement>('#language-note');
 const statusLine = must<HTMLParagraphElement>('#status');
 const grantButton = must<HTMLButtonElement>('#grant');
 const selectionBlock = must<HTMLElement>('#selection-block');
 const selectionText = must<HTMLParagraphElement>('#selection-text');
 const selectionContext = must<HTMLParagraphElement>('#selection-context');
+
+/** Last saved settings, so a swap can be told apart from an ordinary change. */
+let current: Settings;
 
 function must<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -57,16 +69,45 @@ function setStatus(text: string, good = false): void {
   else statusLine.removeAttribute('data-tone');
 }
 
-function populateLanguages(selected: LanguageCode): void {
+function option(value: string, label: string, selected: string): HTMLOptionElement {
+  const element = document.createElement('option');
+  element.value = value;
+  element.textContent = label;
+  element.selected = value === selected;
+  return element;
+}
+
+/**
+ * Fills both language pickers.
+ *
+ * Only the subtitle side offers "Detect automatically": there is nothing to detect about
+ * the language somebody wants to read.
+ */
+function populateLanguages(settings: Settings): void {
   languageSelect.replaceChildren(
-    ...SUPPORTED_LANGUAGES.map(({ code, label }) => {
-      const option = document.createElement('option');
-      option.value = code;
-      option.textContent = label;
-      option.selected = code === selected;
-      return option;
-    }),
+    option(AUTO_LANGUAGE, 'Detect automatically', settings.subtitleLanguage),
+    ...SUPPORTED_LANGUAGES.map(({ code, label }) => option(code, label, settings.subtitleLanguage)),
   );
+  translationSelect.replaceChildren(
+    ...SUPPORTED_LANGUAGES.map(({ code, label }) => option(code, label, settings.translationLanguage)),
+  );
+}
+
+/**
+ * Re-reads both pickers from what was actually saved, and says so when the two were
+ * swapped — a control that silently changes a value the user did not touch is otherwise
+ * just a control that looks broken.
+ */
+function showSaved(saved: Settings, swapped: boolean): void {
+  populateLanguages(saved);
+  languageNote.hidden = !swapped;
+  if (swapped) {
+    const from = saved.subtitleLanguage === AUTO_LANGUAGE
+      ? 'Detected'
+      : languageLabel(saved.subtitleLanguage);
+    languageNote.textContent =
+      `Swapped — ${from} subtitles, translated into ${languageLabel(saved.translationLanguage)}.`;
+  }
 }
 
 /** Starts SubSelect in the current tab right now, without waiting for a reload. */
@@ -151,8 +192,31 @@ enabledInput.addEventListener('change', () => {
   void setSettings({ enabled: enabledInput.checked }).then(() => refreshStatus());
 });
 
+/*
+ * Both pickers go through here, and both re-render from what was saved rather than from
+ * what was clicked: `setSettings` may have swapped the pair to keep the two languages
+ * apart, and the pickers have to show what is actually in force.
+ *
+ * A swap is exactly "the field the user did not touch changed", which is also the only
+ * case worth telling them about.
+ */
+function changeLanguage(patch: Partial<Settings>): void {
+  const before = current;
+  void setSettings(patch).then((saved) => {
+    current = saved;
+    const swapped =
+      (patch.subtitleLanguage !== undefined && saved.translationLanguage !== before.translationLanguage) ||
+      (patch.translationLanguage !== undefined && saved.subtitleLanguage !== before.subtitleLanguage);
+    showSaved(saved, swapped);
+  });
+}
+
 languageSelect.addEventListener('change', () => {
-  void setSettings({ subtitleLanguage: languageSelect.value as LanguageCode });
+  changeLanguage({ subtitleLanguage: languageSelect.value as SubtitleLanguage });
+});
+
+translationSelect.addEventListener('change', () => {
+  changeLanguage({ translationLanguage: translationSelect.value as LanguageCode });
 });
 
 must<HTMLButtonElement>('#open-options').addEventListener('click', () => {
@@ -172,8 +236,9 @@ async function refreshVocabularyCount(): Promise<void> {
 
 async function init(): Promise<void> {
   const settings = await getSettings();
+  current = settings;
   enabledInput.checked = settings.enabled;
-  populateLanguages(settings.subtitleLanguage);
+  populateLanguages(settings);
 
   // The popup follows the same theme choice as the rest of SubSelect's surfaces.
   if (settings.theme === 'system') document.documentElement.removeAttribute('data-theme');

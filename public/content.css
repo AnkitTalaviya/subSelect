@@ -91,9 +91,11 @@
   position: fixed !important;
 }
 
-/* Derived mode (TextTrack source): there is no player element to measure, so the layer is
-   a band over the lower part of the video and the caption lines stack up from its bottom
-   edge, the way a user-agent caption box does. */
+/* Caption lines stack up from the bottom edge, the way a user-agent caption box does.
+   In derived mode (TextTrack source) there is no player element to measure, so the layer
+   is a band over the lower part of the video. In mirror mode the box is the player's own
+   caption box, and stacking from its bottom means an overlay that needs one more line than
+   the player did grows up into the picture instead of off the bottom of it. */
 .subselect-layer[data-ss-anchor='bottom'] {
   display: flex !important;
   flex-direction: column !important;
@@ -116,8 +118,18 @@
   pointer-events: none !important;
 }
 
+/*
+ * Inline, exactly like the caption span it mirrors — not inline-block.
+ *
+ * Players put the caption's background and padding on an inline <span>, and vertical
+ * padding on an inline box paints outside the line without adding to its height. As an
+ * inline-block it counts, so every line grew by twice the padding and a two-line subtitle
+ * rendered nineteen pixels taller than the one it was covering, hanging off the bottom of
+ * the picture. Horizontal padding still narrows the text the same way theirs does, so the
+ * two wrap at the same word.
+ */
 .subselect-line-inner {
-  display: inline-block !important;
+  display: inline !important;
   margin: 0 !important;
   padding: var(--ss-padding) !important;
   border: 0 !important;

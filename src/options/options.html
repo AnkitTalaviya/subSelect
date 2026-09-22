@@ -52,7 +52,9 @@
               <label for="subtitleLanguage">Subtitle language</label>
               <p class="hint">
                 Used to split words correctly and to pick a pronunciation voice. A site that
-                declares its own caption language overrides this.
+                declares its own caption language overrides this. Left on
+                <em>Detect automatically</em>, the language is read from the track, from the
+                player's own markup, or failing both, from the subtitles themselves.
               </p>
             </div>
             <select id="subtitleLanguage"></select>
@@ -60,6 +62,10 @@
           <div class="field">
             <div class="field-text">
               <label for="translationLanguage">Translate into</label>
+              <p class="hint">
+                Cannot be the same as the subtitle language — choosing one that is already
+                taken swaps the two.
+              </p>
             </div>
             <select id="translationLanguage"></select>
           </div>
