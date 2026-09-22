@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SubSelect — Interactive Subtitles",
   "short_name": "SubSelect",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Click or select words in video subtitles to look them up, copy them and save them while you watch.",
   "minimum_chrome_version": "109",
 
